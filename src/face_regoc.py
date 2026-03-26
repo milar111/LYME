@@ -4,12 +4,11 @@ import time
 import os
 import urllib.request
 
-
-MODEL_PATH = "pose_landmarker.task"
-MODEL_URL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task"
+MODEL_PATH = "pose_landmarker_full.task" 
+MODEL_URL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task"
 
 if not os.path.exists(MODEL_PATH):
-    print("Downloading model...")
+    print(f"Downloading {MODEL_PATH}...")
     urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
     print("Download complete.")
 
@@ -27,10 +26,11 @@ def result_callback(result, output_image, timestamp_ms):
 options = PoseLandmarkerOptions(
     base_options=BaseOptions(model_asset_path=MODEL_PATH),
     running_mode=VisionRunningMode.LIVE_STREAM,
-    result_callback=result_callback
+    result_callback=result_callback,
+    min_pose_detection_confidence=0.2, 
+    min_pose_presence_confidence=0.2,  
+    min_tracking_confidence=0.2
 )
-
-
 with PoseLandmarker.create_from_options(options) as landmarker:
     cap = cv2.VideoCapture(0)
     
@@ -40,15 +40,16 @@ with PoseLandmarker.create_from_options(options) as landmarker:
 
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
         
+
         timestamp = int(time.time() * 1000)
         landmarker.detect_async(mp_image, timestamp)
 
-        
-        msg = "PERSON IN SIGHT" if person_in_sight else "NO ONE YET..."
+        msg = "PERSON DETECTED" if person_in_sight else "No one in sight"
         color = (0, 255, 0) if person_in_sight else (0, 0, 255)
-        cv2.putText(frame, msg, (30, 50), cv2.FONT_HERSHEY_DUPLEX, 1, color, 2)
         
-        cv2.imshow('Demo', frame)
+        cv2.putText(frame, msg, (30, 50), cv2.FONT_HERSHEY_DUPLEX, 1, color, 2)
+        cv2.imshow('Full body detection', frame)
+        
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
