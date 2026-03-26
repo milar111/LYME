@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 from src import config
 
-def find_laser(frame):
+'''def find_laser(frame):
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     lower = np.array(config.LOWER_RED)
     upper = np.array(config.UPPER_RED)
@@ -18,4 +18,4 @@ def find_laser(frame):
                 cx = int(M["m10"] / M["m00"])
                 cy = int(M["m01"] / M["m00"])
                 return (cx, cy), mask
-    return None, mask
+    return None, mask'''
