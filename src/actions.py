@@ -1,4 +1,6 @@
 import os
+import datetime 
+import subprocess
 import base64
 
 try:
@@ -6,6 +8,16 @@ try:
 except ImportError:
     openai = None
 
+def trigger_alarm():
+    subprocess.Popen(["afplay", "/System/Library/Sounds/Ping.aiff"])
+
+def log_incident(message):
+    if not os.path.exists("data"):
+        os.makedirs("data")
+    
+    with open("data/logs.txt", "a") as f:
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        f.write(f"[{timestamp}] {message}\n")
 
 def save_frame(frame, path="data/capture.jpg"):
     """Save a frame to disk and return the path."""
@@ -23,7 +35,6 @@ def _get_local_avalanche_score(image_path):
     if img is None:
         raise RuntimeError(f"Could not load image at {image_path}")
 
-    # Convert BGR to HSV for color detection
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
     # Define brown color range in HSV
@@ -31,14 +42,11 @@ def _get_local_avalanche_score(image_path):
     lower_brown = np.array([8, 50, 50])
     upper_brown = np.array([25, 255, 200])
     
-    # Create mask for brown pixels
     brown_mask = cv2.inRange(hsv, lower_brown, upper_brown)
     
-    # Calculate brown pixel ratio
     brown_ratio = np.sum(brown_mask > 0) / (brown_mask.shape[0] * brown_mask.shape[1])
     
-    # If more than 5% of image is brown, consider it detected
-    is_detected = brown_ratio > 0.05
+    is_detected = brown_ratio > 0.50
 
     return is_detected, brown_ratio
 
@@ -47,12 +55,10 @@ def _get_local_avalanche_score(image_path):
 def query_avalanche(image_path, provider="local", model="gemini-pro-1.0"):
     """Send an image to an LLM and ask if an avalanche is present."""
     if provider == "local":
-        # Test mode: override with env var LYME_TEST_RESPONSE=yes or LYME_TEST_RESPONSE=no
         test_response = os.getenv("LYME_TEST_RESPONSE")
         if test_response in ("yes", "no"):
             return f"{test_response} - TEST MODE (from LYME_TEST_RESPONSE env var)"
         
-        # Otherwise use brown detection heuristic
         is_detected, brown_ratio = _get_local_avalanche_score(image_path)
         status = "yes" if is_detected else "no"
         return f"{status} - brown_ratio={brown_ratio:.3f}"

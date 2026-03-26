@@ -4,7 +4,6 @@ from src import config
 
 def find_laser(frame):
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    
     lower = np.array(config.LOWER_RED)
     upper = np.array(config.UPPER_RED)
     mask = cv2.inRange(hsv, lower, upper)
