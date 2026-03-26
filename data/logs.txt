@@ -112,3 +112,6 @@
 [2026-03-26 14:48:43] Q: is it snowing | A: no
 [2026-03-26 14:50:36] Q: how is it there | A: snowy
 [2026-03-26 14:58:21] Q: how is it today there and where is it exactly | A: it's snowing
+[2026-03-26 15:01:11] Q: does the lift work | A: yes
+[2026-03-26 15:03:17] Q: is the lift working | A: yes
+[2026-03-26 15:03:28] Q: is the lift working | A: yes

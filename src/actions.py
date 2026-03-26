@@ -3,29 +3,34 @@ import datetime
 import subprocess
 import torch
 from PIL import Image
-from transformers import pipeline
+from transformers import BlipProcessor, BlipForQuestionAnswering
 
-vqa_pipeline = None
+processor = None
+model = None
+device = None
 
 def init_model():
-    global vqa_pipeline
+    global processor, model, device
     device = "mps" if torch.backends.mps.is_available() else "cpu"
-    vqa_pipeline = pipeline("visual-question-answering", model="Salesforce/blip-vqa-base", device=device)
+    
+    processor = BlipProcessor.from_pretrained("Salesforce/blip-vqa-base")
+    model = BlipForQuestionAnswering.from_pretrained("Salesforce/blip-vqa-base").to(device)
 
 def query_mountain(frame, question):
-    global vqa_pipeline
-    if vqa_pipeline is None:
+    global processor, model, device
+    if processor is None or model is None:
         init_model()
     
     import cv2
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     pil_img = Image.fromarray(rgb_frame)
     
-    result = vqa_pipeline(pil_img, question, top_k=1)
+    inputs = processor(pil_img, question, return_tensors="pt").to(device)
     
-    if isinstance(result, list) and len(result) > 0:
-        return result[0].get('answer', str(result))
-    return str(result)
+    out = model.generate(**inputs, max_new_tokens=30)
+    answer = processor.decode(out[0], skip_special_tokens=True)
+    
+    return answer
 
 def log_incident(message):
     if not os.path.exists("data"):

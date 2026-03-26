@@ -1,3 +1,9 @@
+import warnings
+import logging
+
+warnings.filterwarnings("ignore")
+logging.getLogger("transformers").setLevel(logging.ERROR)
+
 import os
 import cv2
 import subprocess
@@ -5,11 +11,6 @@ import numpy as np
 import time
 from src import config
 from src import actions
-import warnings
-import logging
-
-warnings.filterwarnings("ignore")
-logging.getLogger("transformers").setLevel(logging.ERROR)
 
 user_question = input("What would you like to ask the AI about the mountain? (e.g. 'Is it snowing?'): ")
 
