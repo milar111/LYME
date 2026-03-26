@@ -44,6 +44,8 @@ current_answer = "Waiting for AI..."
 
 print("--- LYME AI ASSISTANT ACTIVE ---")
 
+assert process.stdout is not None
+
 try:
     while True:
         raw_frame = process.stdout.read(frame_size)
