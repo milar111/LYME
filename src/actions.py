@@ -1,27 +1,10 @@
 import os
-import datetime
-import subprocess
 import base64
 
 try:
     import openai
 except ImportError:
     openai = None
-
-
-def trigger_alarm():
-    # This plays the "Ping" sound found on every Mac
-    subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"], check=True)
-    
-    # Log the breach to a file
-    with open("data/logs.txt", "a") as f:
-        now = datetime.datetime.now().strftime("%H:%M:%S")
-        f.write(f"[{now}] WARNING: Optical Link Interrupted!\n")
-
-
-def signal_clear():
-    # Logic for when the laser is hitting correctly
-    pass
 
 
 def save_frame(frame, path="data/capture.jpg"):
