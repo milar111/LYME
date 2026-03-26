@@ -37,10 +37,11 @@ with PoseLandmarker.create_from_options(options) as landmarker:
     while cap.isOpened():
         success, frame = cap.read()
         if not success: break
+        
+        frame = cv2.flip(frame, 1)
 
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
         
-
         timestamp = int(time.time() * 1000)
         landmarker.detect_async(mp_image, timestamp)
 
