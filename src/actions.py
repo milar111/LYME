@@ -2,24 +2,29 @@ import os
 import datetime 
 import subprocess
 import torch
+from typing import Any
 from PIL import Image
 from transformers import BlipProcessor, BlipForQuestionAnswering
 
-processor = None
-model = None
-device = None
+processor: Any = None
+model: Any = None
+device: Any = None
 
 def init_model():
     global processor, model, device
     device = "mps" if torch.backends.mps.is_available() else "cpu"
     
     processor = BlipProcessor.from_pretrained("Salesforce/blip-vqa-base")
-    model = BlipForQuestionAnswering.from_pretrained("Salesforce/blip-vqa-base").to(device)
-
+    model = BlipForQuestionAnswering.from_pretrained("Salesforce/blip-vqa-base").to(device) # type: ignore
+    
 def query_mountain(frame, question):
     global processor, model, device
     if processor is None or model is None:
         init_model()
+        
+    assert processor is not None
+    assert model is not None
+    assert device is not None
     
     import cv2
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
