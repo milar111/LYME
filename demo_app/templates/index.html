@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>LYME — Live Monitor</title>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg: #06080f; --surface: #0b0e1a; --border: #1e2a4a;
+      --accent: #c8ff00; --danger: #ff1744; --warn: #ff9100;
+      --ok: #00e676; --muted: #2a3a5a; --text: #d0e8ff; --dim: #4a6080;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Barlow Condensed', sans-serif; height: 100vh; overflow: hidden; }
+
+    .layout { display: grid; grid-template-columns: 1fr 300px; height: 100vh; }
+
+    .video-panel { position: relative; background: #000; overflow: hidden; border-right: 1px solid var(--border); }
+    #stream { width: 100%; height: 100%; object-fit: contain; display: block; opacity: 0; transition: opacity .6s; cursor: crosshair; user-select: none; }
+    #stream.loaded { opacity: 1; }
+
+    #zone-canvas {
+      position: absolute; inset: 0; pointer-events: none;
+      width: 100%; height: 100%;
+    }
+    #zone-canvas.drawing { pointer-events: all; cursor: crosshair; }
+
+    #alert-flash { position: absolute; inset: 0; pointer-events: none; }
+    #alert-flash.active { border: 6px solid var(--danger); box-shadow: inset 0 0 50px rgba(255,23,68,.35); animation: flash .4s infinite; }
+    #alert-flash.object { border: 5px solid var(--warn); box-shadow: inset 0 0 40px rgba(255,145,0,.25); animation: flash-slow 1s infinite; }
+    @keyframes flash { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+    @keyframes flash-slow { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+
+    #person-badge {
+      position: absolute; bottom: 10px; left: 10px;
+      padding: 4px 12px; border-radius: 20px;
+      border: 1px solid var(--ok); color: var(--ok);
+      font-size: 0.72rem; font-family: 'Share Tech Mono', monospace;
+      background: rgba(0,0,0,.6); transition: all .2s;
+    }
+    #person-badge.detected { border-color: var(--danger); color: var(--danger); }
+
+    #object-badge {
+      position: absolute; bottom: 10px; right: 10px;
+      padding: 4px 12px; border-radius: 20px;
+      border: 1px solid var(--warn); color: var(--warn);
+      font-size: 0.72rem; font-family: 'Share Tech Mono', monospace;
+      background: rgba(0,0,0,.75); display: none;
+    }
+
+    #zone-hint {
+      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,.75); color: var(--accent);
+      padding: 5px 14px; border-radius: 4px; font-size: 0.75rem;
+      font-family: 'Share Tech Mono', monospace; display: none; white-space: nowrap;
+    }
+
+    .sidebar {
+      display: flex; flex-direction: column;
+      background: var(--surface); overflow-y: auto;
+    }
+
+    .panel { padding: 14px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .panel-title {
+      font-size: 0.65rem; letter-spacing: 2px; text-transform: uppercase;
+      color: var(--dim); margin-bottom: 10px;
+    }
+
+    .stat-value { font-size: 1.4rem; font-weight: 700; transition: color .2s; }
+
+    .zone-btn-row { display: flex; gap: 6px; margin-top: 8px; }
+    .btn {
+      flex: 1; padding: 8px 6px; border: 1px solid var(--border);
+      background: transparent; color: var(--dim); cursor: pointer;
+      font-family: 'Barlow Condensed', sans-serif; font-size: 0.8rem;
+      text-transform: uppercase; letter-spacing: 1px; transition: all .15s;
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+    .btn.active { background: rgba(200,255,0,.08); border-color: var(--accent); color: var(--accent); }
+    .btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+    .btn.confirm { border-color: var(--ok); color: var(--ok); }
+    .btn.confirm:hover { background: rgba(0,230,118,.1); }
+    #zone-status { font-size: 0.72rem; color: var(--dim); margin-top: 6px; font-family: 'Share Tech Mono', monospace; }
+    #zone-point-count { color: var(--accent); }
+
+    .context-add { display: flex; gap: 6px; margin-bottom: 10px; }
+    .context-add input {
+      flex: 1; background: var(--bg); border: 1px solid var(--border);
+      color: var(--text); padding: 7px 10px; font-size: 0.85rem;
+      font-family: 'Barlow Condensed', sans-serif;
+    }
+    .context-add input::placeholder { color: var(--dim); }
+    .context-add input:focus { outline: none; border-color: var(--accent); }
+    #item-list { display: flex; flex-direction: column; gap: 4px; }
+    .item-row {
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--bg); padding: 6px 10px; font-size: 0.82rem;
+    }
+    .item-name { color: var(--text); }
+    .item-del {
+      background: none; border: none; color: var(--dim); cursor: pointer;
+      font-size: 1rem; padding: 0 4px; line-height: 1;
+    }
+    .item-del:hover { color: var(--danger); }
+
+    #ai-list { display: flex; flex-direction: column; gap: 6px; }
+    .ai-row { background: var(--bg); padding: 8px 10px; border-left: 3px solid var(--muted); transition: all .3s; }
+    .ai-row.detected { border-left-color: var(--warn); background: rgba(255,145,0,.06); }
+    .ai-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .ai-item { font-size: 0.82rem; font-weight: 600; color: var(--text); }
+    .ai-status-icon { font-size: 0.9rem; margin-right: 4px; }
+    .ai-conf { font-size: 0.78rem; font-family: 'Share Tech Mono', monospace; font-weight: 700; }
+    .ai-conf.high { color: var(--danger); }
+    .ai-conf.mid  { color: var(--warn); }
+    .ai-conf.low  { color: var(--ok); }
+    .ai-conf.pending { color: var(--dim); }
+    .ai-desc { font-size: 0.72rem; color: var(--dim); font-family: 'Share Tech Mono', monospace; }
+    .conf-bar { height: 5px; background: var(--muted); border-radius: 3px; margin-top: 5px; }
+    .conf-fill { height: 100%; border-radius: 3px; transition: width .4s; }
+
+    .log-panel { flex: 1; padding: 14px 16px; overflow-y: auto; min-height: 80px; }
+    #log-list { font-family: 'Share Tech Mono', monospace; font-size: 0.68rem; display: flex; flex-direction: column; gap: 2px; }
+    .log-entry { padding: 2px 0; border-bottom: 1px solid var(--muted); }
+    .log-entry.danger { color: var(--danger); }
+    .log-entry.ok     { color: var(--ok); }
+    .log-entry.info   { color: var(--dim); }
+
+    .footer-bar {
+      padding: 10px 16px; border-top: 1px solid var(--border);
+      display: flex; gap: 6px; flex-shrink: 0;
+    }
+    .footer-bar .btn { font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+<div class="layout">
+
+  <div class="video-panel">
+    <img id="stream" src="/video_feed" onload="this.classList.add('loaded')"/>
+    <canvas id="zone-canvas"></canvas>
+    <div id="alert-flash"></div>
+    <div id="person-badge">No person</div>
+    <div id="object-badge"></div>
+    <div id="zone-hint">Click to place points · Right-click to undo · Press Confirm when done</div>
+  </div>
+
+  <div class="sidebar">
+
+    <div class="panel">
+      <div class="panel-title">System Status</div>
+      <div class="stat-value" id="stat-status" style="color:var(--ok)">CLEAR</div>
+      <div style="font-size:.75rem;color:var(--dim);margin-top:4px;">
+        Last seen: <span id="stat-last">—</span>s ago
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Forbidden Zone</div>
+      <div id="zone-status">
+        Status: <span id="zone-live-status">loading…</span>
+      </div>
+      <div id="zone-point-count" style="font-size:.72rem;margin-top:3px;"></div>
+      <div class="zone-btn-row">
+        <button class="btn" id="btn-draw" onclick="startDrawing()">Draw Zone</button>
+        <button class="btn confirm" id="btn-confirm" onclick="confirmZone()" style="display:none">Confirm</button>
+        <button class="btn danger" id="btn-cancel" onclick="cancelDrawing()" style="display:none">Cancel</button>
+        <button class="btn danger" id="btn-clear" onclick="clearZone()">Clear</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Monitor For</div>
+      <div class="context-add">
+        <input id="new-item" type="text" placeholder="e.g. bottle, cap, weapon…" maxlength="60"
+               onkeydown="if(event.key==='Enter') addItem()"/>
+        <button class="btn" style="flex:0;padding:7px 12px;" onclick="addItem()">+</button>
+      </div>
+      <div id="item-list"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">AI Detections (Forbidden Zone)</div>
+      <div id="ai-list"><div style="color:var(--dim);font-size:.75rem;">No items configured.</div></div>
+    </div>
+
+    <div class="log-panel">
+      <div class="panel-title">Event Log</div>
+      <div id="log-list">
+        <div class="log-entry info">[system] started</div>
+      </div>
+    </div>
+
+    <div class="footer-bar">
+      <button class="btn danger" onclick="triggerShutdown()">Shutdown</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function addLog(msg, cls='info') {
+  const el = document.getElementById('log-list');
+  const t = new Date().toLocaleTimeString('en-GB', { hour12: false });
+  const d = document.createElement('div');
+  d.className = 'log-entry ' + cls;
+  d.textContent = `[${t}] ${msg}`;
+  el.prepend(d);
+  while (el.children.length > 60) el.lastChild.remove();
+}
+
+let prevIntrusion = null;
+async function pollStatus() {
+  try {
+    const d = await fetch('/status').then(r => r.json());
+    const badge = document.getElementById('person-badge');
+    if (d.person_in_sight) { badge.classList.add('detected'); badge.textContent = 'Person detected'; }
+    else { badge.classList.remove('detected'); badge.textContent = 'No person'; }
+
+    const stat = document.getElementById('stat-status');
+    const flash = document.getElementById('alert-flash');
+    if (d.is_intruding) {
+      stat.textContent = 'INTRUDING'; stat.style.color = 'var(--danger)';
+      flash.classList.add('active');
+      flash.classList.remove('object');
+    } else if (d.object_alert) {
+      stat.textContent = 'OBJECT ALERT'; stat.style.color = 'var(--warn)';
+      flash.classList.remove('active');
+      flash.classList.add('object');
+    } else if (d.guard_state === 'DWELLING') {
+      stat.textContent = 'DWELLING…'; stat.style.color = 'var(--warn)';
+      flash.classList.remove('active', 'object');
+    } else {
+      stat.textContent = 'CLEAR'; stat.style.color = 'var(--ok)';
+      flash.classList.remove('active', 'object');
+    }
+
+    document.getElementById('stat-last').textContent = d.last_seen_ago ?? '—';
+
+    if (prevIntrusion !== null && d.is_intruding !== prevIntrusion)
+      addLog(d.is_intruding ? 'INTRUSION DETECTED' : 'Zone cleared', d.is_intruding ? 'danger' : 'ok');
+    prevIntrusion = d.is_intruding;
+  } catch(_) {}
+}
+setInterval(pollStatus, 1000); pollStatus();
+
+let prevDetectedItems = new Set();
+async function pollAI() {
+  try {
+    const d = await fetch('/ai_status').then(r => r.json());
+    const el = document.getElementById('ai-list');
+    const objBadge = document.getElementById('object-badge');
+    if (!d.items || d.items.length === 0) {
+      el.innerHTML = '<div style="color:var(--dim);font-size:.75rem;">No items configured.</div>';
+      objBadge.style.display = 'none';
+      return;
+    }
+    el.innerHTML = '';
+    const detectedNames = [];
+    d.items.forEach(item => {
+      const conf = item.confidence;
+      const cls = conf < 0 ? 'pending' : conf >= 70 ? 'high' : conf >= 40 ? 'mid' : 'low';
+      const confText = conf < 0 ? '…' : conf + '%';
+      const barColor = cls === 'high' ? 'var(--danger)' : cls === 'mid' ? 'var(--warn)' : 'var(--ok)';
+      const barW = conf < 0 ? 0 : conf;
+      const icon = conf < 0 ? '⏳' : item.detected ? '⚠️' : '✅';
+      const row = document.createElement('div');
+      row.className = 'ai-row' + (item.detected ? ' detected' : '');
+      row.innerHTML = `
+        <div class="ai-header">
+          <span class="ai-item"><span class="ai-status-icon">${icon}</span>${item.item}</span>
+          <span class="ai-conf ${cls}">${confText}</span>
+        </div>
+        <div class="ai-desc">${item.description || '—'}</div>
+        <div class="conf-bar"><div class="conf-fill" style="width:${barW}%;background:${barColor}"></div></div>`;
+      el.appendChild(row);
+
+      if (item.detected) detectedNames.push(item.item);
+
+      const key = item.item;
+      if (item.detected && !prevDetectedItems.has(key)) {
+        addLog(`🔍 DETECTED: ${key} (${confText})`, 'danger');
+      } else if (!item.detected && prevDetectedItems.has(key) && conf >= 0) {
+        addLog(`✅ Cleared: ${key}`, 'ok');
+      }
+    });
+
+    prevDetectedItems = new Set(detectedNames);
+
+    if (detectedNames.length > 0) {
+      objBadge.textContent = '🔍 ' + detectedNames.join(', ');
+      objBadge.style.display = 'block';
+    } else {
+      objBadge.style.display = 'none';
+    }
+  } catch(_) {}
+}
+setInterval(pollAI, 3000); pollAI();
+
+async function loadItems() {
+  const d = await fetch('/context').then(r => r.json());
+  renderItems(d.items);
+}
+
+function renderItems(items) {
+  const el = document.getElementById('item-list');
+  el.innerHTML = '';
+  items.forEach((name, i) => {
+    const row = document.createElement('div');
+    row.className = 'item-row';
+    row.innerHTML = `<span class="item-name">${name}</span>
+      <button class="item-del" onclick="removeItem(${i})" title="Remove">✕</button>`;
+    el.appendChild(row);
+  });
+}
+
+async function addItem() {
+  const inp = document.getElementById('new-item');
+  const val = inp.value.trim();
+  if (!val) return;
+  const reserved = ['person', 'human', 'people', 'face', 'man', 'woman'];
+  if (reserved.includes(val.toLowerCase())) {
+    addLog(`"${val}" is detected automatically — no need to add it.`, 'info');
+    inp.value = '';
+    return;
+  }
+  const d = await fetch('/context', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ item: val })
+  }).then(r => r.json());
+  inp.value = '';
+  renderItems(d.items);
+  addLog(`Now monitoring: ${val}`, 'ok');
+}
+
+async function removeItem(idx) {
+  const d = await fetch(`/context/${idx}`, { method: 'DELETE' }).then(r => r.json());
+  renderItems(d.items);
+  addLog(`Removed monitored item #${idx}`, 'info');
+}
+
+loadItems();
+
+const canvas = document.getElementById('zone-canvas');
+const ctx = canvas.getContext('2d');
+const stream = document.getElementById('stream');
+
+let drawing = false;
+let pendingPts = []; 
+
+function getVideoRect() {
+  const r = stream.getBoundingClientRect();
+  const natW = stream.naturalWidth  || 640;
+  const natH = stream.naturalHeight || 480;
+  const imgAspect = natW / natH;
+  const boxAspect = r.width / r.height;
+  let vw, vh, ox, oy;
+  if (imgAspect > boxAspect) {
+    vw = r.width;  vh = r.width / imgAspect;
+    ox = 0;        oy = (r.height - vh) / 2;
+  } else {
+    vh = r.height; vw = r.height * imgAspect;
+    oy = 0;        ox = (r.width - vw) / 2;
+  }
+  return { x: ox, y: oy, width: vw, height: vh };
+}
+
+function resizeCanvas() {
+  const r = stream.getBoundingClientRect();
+  canvas.width  = r.width;
+  canvas.height = r.height;
+  canvas.style.left = r.left - stream.parentElement.getBoundingClientRect().left + 'px';
+  canvas.style.top  = r.top  - stream.parentElement.getBoundingClientRect().top  + 'px';
+  redrawCanvas();
+}
+window.addEventListener('resize', resizeCanvas);
+stream.addEventListener('load', () => { resizeCanvas(); loadZone(); });
+
+canvas.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  if (drawing && pendingPts.length > 0) { pendingPts.pop(); redrawCanvas(); }
+});
+
+canvas.addEventListener('click', e => {
+  if (!drawing) return;
+  const cr = canvas.getBoundingClientRect();
+  const vr = getVideoRect();
+
+  const cx = e.clientX - cr.left;
+  const cy = e.clientY - cr.top;
+
+  const nx = (cx - vr.x) / vr.width;
+  const ny = (cy - vr.y) / vr.height;
+
+  if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return;
+
+  pendingPts.push({ x: nx, y: ny });
+  document.getElementById('zone-point-count').textContent = `${pendingPts.length} point(s) placed`;
+  redrawCanvas();
+});
+
+
+function redrawCanvas() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (pendingPts.length === 0) return;
+  const vr = getVideoRect();
+
+  let pts = pendingPts.map(p => ({ x: vr.x + p.x * vr.width, y: vr.y + p.y * vr.height }));
+
+  if (pts.length >= 3) {
+    const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+    const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+    pts.sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+  if (pts.length >= 3) ctx.closePath();
+
+  ctx.fillStyle = 'rgba(255, 23, 68, 0.18)';
+  ctx.fill();
+  ctx.strokeStyle = '#ff1744';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  pts.forEach((p, i) => {
+    ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff1744'; ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = '11px Share Tech Mono'; ctx.textAlign = 'left';
+    ctx.fillText(i + 1, p.x + 9, p.y - 4);
+  });
+}
+
+function startDrawing() {
+  drawing = true;
+  pendingPts = [];
+  canvas.classList.add('drawing');
+  document.getElementById('btn-draw').style.display = 'none';
+  document.getElementById('btn-clear').style.display = 'none';
+  document.getElementById('btn-confirm').style.display = '';
+  document.getElementById('btn-cancel').style.display = '';
+  document.getElementById('zone-hint').style.display = 'block';
+  document.getElementById('zone-point-count').textContent = '0 points placed';
+  redrawCanvas();
+}
+
+function cancelDrawing() {
+  drawing = false;
+  pendingPts = [];
+  canvas.classList.remove('drawing');
+  document.getElementById('btn-draw').style.display = '';
+  document.getElementById('btn-clear').style.display = '';
+  document.getElementById('btn-confirm').style.display = 'none';
+  document.getElementById('btn-cancel').style.display = 'none';
+  document.getElementById('zone-hint').style.display = 'none';
+  document.getElementById('zone-point-count').textContent = '';
+  loadZone(); 
+}
+
+async function confirmZone() {
+  if (pendingPts.length < 3) { alert('Place at least 3 points.'); return; }
+  await fetch('/zone', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ points: pendingPts })
+  });
+  drawing = false;
+  canvas.classList.remove('drawing');
+  document.getElementById('btn-draw').style.display = '';
+  document.getElementById('btn-clear').style.display = '';
+  document.getElementById('btn-confirm').style.display = 'none';
+  document.getElementById('btn-cancel').style.display = 'none';
+  document.getElementById('zone-hint').style.display = 'none';
+  document.getElementById('zone-point-count').textContent = '';
+  document.getElementById('zone-live-status').textContent = 'active';
+  addLog('Forbidden zone saved.', 'ok');
+  loadZone();
+}
+
+async function clearZone() {
+  if (!confirm('Clear the forbidden zone?')) return;
+  await fetch('/zone', { method: 'DELETE' });
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  document.getElementById('zone-live-status').textContent = 'none';
+  addLog('Zone cleared.', 'info');
+}
+
+async function loadZone() {
+  try {
+    const d = await fetch('/zone').then(r => r.json());
+    const statusEl = document.getElementById('zone-live-status');
+    if (!d.points) { statusEl.textContent = 'none'; ctx.clearRect(0, 0, canvas.width, canvas.height); return; }
+    statusEl.textContent = `active (${d.points.length} pts)`;
+    pendingPts = d.points.map(p => Array.isArray(p) ? { x: p[0], y: p[1] } : p);
+    redrawCanvas();
+    pendingPts = []; 
+  } catch(_) {}
+}
+
+async function triggerShutdown() {
+  if (!confirm('Shutdown the system?')) return;
+  await fetch('/shutdown', { method: 'POST' });
+  const t = new Date().toLocaleString('en-GB', { hour12: false });
+  document.body.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#06080f;font-family:'Barlow Condensed',sans-serif;">
+      <div style="text-align:center;padding:40px 60px;background:rgba(11,14,26,.9);border:1px solid #1e2a4a;border-radius:16px;box-shadow:0 0 60px rgba(0,0,0,.6);">
+        <div style="font-size:2.5rem;font-weight:700;color:#ff1744;letter-spacing:3px;margin-bottom:8px;">LYME</div>
+        <div style="font-size:1.3rem;color:#d0e8ff;font-weight:300;margin-bottom:16px;">System Offline</div>
+        <div style="width:60px;height:2px;background:#1e2a4a;margin:0 auto 16px;"></div>
+        <div style="font-size:.8rem;color:#4a6080;font-family:'Share Tech Mono',monospace;margin-bottom:20px;">Shutdown at ${t}</div>
+        <button onclick="location.reload()" style="padding:10px 28px;background:transparent;border:1px solid #c8ff00;color:#c8ff00;font-family:'Barlow Condensed',sans-serif;font-size:.85rem;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border-radius:4px;transition:all .2s;" onmouseover="this.style.background='rgba(200,255,0,.1)'" onmouseout="this.style.background='transparent'">Reconnect</button>
+      </div>
+    </div>`;
+}
+</script>
+</body>
+</html>
