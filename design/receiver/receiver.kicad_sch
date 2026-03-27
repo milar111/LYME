@@ -2541,7 +2541,7 @@
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
-		(dnp yes)
+		(dnp no)
 		(uuid "428eba6d-12da-4a8e-86af-279ba3ac77d6")
 		(property "Reference" "R3"
 			(at 93.98 76.2 90)
