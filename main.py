@@ -164,57 +164,40 @@ def _put_label(frame, text: str, x: int, y: int,
     cv2.addWeighted(overlay, 0.55, frame, 0.45, 0, frame)
     cv2.putText(frame, text, (x, y), font, scale, colour, thickness)
 
-def _draw_hud(frame, person: bool, gesture: str, objects: list,
+def _draw_hud(frame, person, gesture, objects,
               guard_state: GuardState, dwell_progress: float,
               alert_active: bool) -> None:
     h, w = frame.shape[:2]
+
+    # Keep the zone overlays (the red/green transparent polygons)
     draw_zones(frame, alert_active=alert_active)
 
+    # Keep the red flashing border effect when an alert is active
     if alert_active:
         if int((time.monotonic() - _flash_until) / _FLASH_DURATION) % 2 == 0:
             cv2.rectangle(frame, (0, 0), (w - 1, h - 1), (0, 0, 255), 8)
 
-    SCALE, LINE_H, x0, y0 = 0.65, 28, 10, 36
+    # --- ALL _put_label CALLS REMOVED FROM HERE ---
 
-    person_colour = (0, 0, 255) if (person and zone_active and guard_state != GuardState.CLEAR) else (0, 255, 0)
-    _put_label(frame,
-               f"Person: {'IN ZONE' if (person and guard_state != GuardState.CLEAR) else ('detected' if person else 'none')}",
-               x0, y0, person_colour, SCALE)
-
-    _put_label(frame, f"Gesture: {gesture}", x0, y0 + LINE_H, (0, 255, 0), SCALE)
-    obj_text = ", ".join(objects) if objects else "none"
-    _put_label(frame, f"Objects: {obj_text}", x0, y0 + LINE_H * 2, (0, 255, 0), SCALE)
-
-    with _ai_lock:
-        answers = list(_answers)
-
-    for i, (item, ans) in enumerate(zip(_items, answers)):
-        short_item = item if len(item) <= 20 else item[:17] + "..."
-        conf = parse_confidence(ans)
-        detected = parse_detected(ans)
-
-        if ans == "...": colour = (180, 180, 180)
-        elif detected and conf >= 70: colour = (0, 80, 255)
-        elif detected and conf >= 40: colour = (0, 165, 255)
-        else: colour = (0, 220, 100)
-
-        if conf >= 0:
-            display = f"{conf}% | {ans.split('|')[-1].strip()[:35]}" if '|' in ans else ans[:40]
-        else:
-            display = ans[:40]
-        
-        if len(display) > 40:
-            display = display[:37] + "..."
-        
-        _put_label(frame, f"AI [{short_item}]: {display}", x0, y0 + LINE_H * (3 + i), colour, SCALE)
-
-    status_y = y0 + LINE_H * (3 + len(_items))
-    _put_label(frame, f"Zone: {guard_state.name}", x0, status_y, (0, 0, 255) if alert_active else (180, 180, 180), SCALE)
-
+    # Keep the Dwell progress bar at the bottom for visual confirmation
     if guard_state == GuardState.DWELLING and dwell_progress > 0:
         bar_w = int((w - 20) * dwell_progress)
         cv2.rectangle(frame, (10, h - 22), (w - 10, h - 8), (40, 40, 40), -1)
         cv2.rectangle(frame, (10, h - 22), (10 + bar_w, h - 8), (0, 165, 255), -1)
+        # Note: This uses a dedicated font helper for the bar, not the HUD rows
+        _put_label(frame, "Confirming intrusion...", 10, h - 26, (0, 165, 255), 0.6, 1)
+
+    # Keep the large "!! INTRUSION DETECTED !!" banner at the bottom
+    if alert_active:
+        banner = "!! INTRUSION DETECTED !!"
+        font  = cv2.FONT_HERSHEY_DUPLEX
+        scale = 1.2
+        (bw, bh), _ = cv2.getTextSize(banner, font, scale, 2)
+        bx, by = (w - bw) // 2, h - 18
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (bx - 8, by - bh - 8), (bx + bw + 8, by + 8), (0, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
+        cv2.putText(frame, banner, (bx, by), font, scale, (0, 0, 255), 2)
 
 try:
     while _running and cap.isOpened():
