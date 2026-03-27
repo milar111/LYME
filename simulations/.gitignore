@@ -1,0 +1,26 @@
+# LTspice Minimalist Gitignore
+# Keep only the schematic circuit design (.asc)
+# and any custom model/library files (.lib, .sub, .inc).
+# All simulation data, logs, and temporary netlists are ignored.
+
+# Ignore everything by default
+*
+
+# Allow the .gitignore file itself
+!/.gitignore
+
+# Allow the LTspice schematic design file (MUST KEEP)
+!*.asc
+
+# Allow custom model, subcircuit, and include files (KEEP)
+!*.lib
+!*.sub
+!*.inc
+!*.asy
+
+# Allow everything inside the sim_results folder (including any subfolders/files)
+!sim_results/
+!sim_results/**
+
+# Specifically allow any subdirectories (required for whitelist above)
+!*/
