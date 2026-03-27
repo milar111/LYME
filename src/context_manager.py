@@ -1,26 +1,19 @@
 """
 context_manager.py
 ──────────────────
-Handles the AI monitoring context — the list of things BLIP should watch for.
+Handles the AI monitoring context — the list of things Qwen should watch for.
 
 Persistence:
   • Saved to data/context.json on first run.
   • Loaded silently on every subsequent run — never asks again.
   • To reconfigure: delete data/context.json and restart.
-
-Usage:
-  from src.context_manager import init_context, build_blip_questions, get_summary
-
-  init_context()                    # call once at startup
-  questions = build_blip_questions() # list of BLIP yes/no questions to cycle through
-  summary   = get_summary()          # short string for the HUD / notifications
 """
 
 import json
 import os
+import re
 
 _CONTEXT_FILE = "data/context.json"
-
 _things_to_watch: list[str] = []
 
 
@@ -52,10 +45,10 @@ def _ask_user() -> list[str]:
     print("  Enter one item per line. Empty line when done.")
     print()
     print("  Examples:")
-    print("    a person carrying a bag or backpack")
-    print("    someone touching the equipment")
-    print("    a person wearing a high-visibility vest")
-    print("    any person present")
+    print("    bottle")
+    print("    cap")
+    print("    person carrying a bag")
+    print("    weapon")
     print("─" * 62)
 
     things = []
@@ -76,40 +69,71 @@ def _ask_user() -> list[str]:
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def init_context() -> None:
-    """Load from disk or ask the user. Call once at startup."""
     global _things_to_watch
-
     loaded = _load()
     if loaded:
         _things_to_watch = loaded
-        print(f"[Context] Loaded {len(_things_to_watch)} monitored item(s) "
-              f"from {_CONTEXT_FILE}:")
+        print(f"[Context] Loaded {len(_things_to_watch)} monitored item(s):")
         for i, t in enumerate(_things_to_watch, 1):
             print(f"  {i}. {t}")
         return
-
-    print("[Context] No saved context — asking once (won't ask again after this).")
+    print("[Context] No saved context — asking once.")
     _things_to_watch = _ask_user()
     _save(_things_to_watch)
-    print(f"[Context] Monitoring {len(_things_to_watch)} item(s).")
 
 
 def build_blip_questions() -> list[str]:
     """
-    Returns one BLIP yes/no question per monitored item.
-    BLIP works best with short, direct, factual questions.
-    The caller cycles through these questions across successive 3-second ticks.
+    Strict, minimal prompt — tells Qwen exactly what format to use.
+    Keeping it simple is key for reliable parsing on a small model.
     """
     return [
-        f"Is there {thing} visible in the image? Answer yes or no."
+        (
+            f"Is there a {thing} in this image? "
+            f"Reply with ONLY this format, no extra text: "
+            f"CONFIDENCE: <number 0-100>% | <yes or no> | <one short sentence>"
+        )
         for thing in _things_to_watch
     ]
 
 
 def get_summary() -> str:
-    """Comma-joined list of monitored items — for HUD display."""
     return ", ".join(_things_to_watch) if _things_to_watch else "nothing"
 
 
 def get_items() -> list[str]:
     return list(_things_to_watch)
+
+
+# ── Answer parsing ────────────────────────────────────────────────────────────
+
+def parse_confidence(answer: str) -> int:
+    """
+    Extract confidence % from answer.
+    Expected format: "CONFIDENCE: 87% | yes | A bottle is on the table."
+    Returns 0-100, or -1 if parsing fails.
+    """
+    match = re.search(r'CONFIDENCE[:\s]+(\d{1,3})\s*%', answer, re.IGNORECASE)
+    if match:
+        return min(int(match.group(1)), 100)
+    # Fallback: any number followed by %
+    match = re.search(r'(\d{1,3})\s*%', answer)
+    if match:
+        return min(int(match.group(1)), 100)
+    return -1
+
+
+def parse_detected(answer: str) -> bool:
+    """
+    Returns True if Qwen answered 'yes' in the structured response.
+    Used to decide whether to fire a push notification.
+    """
+    # Look for | yes | pattern
+    match = re.search(r'\|\s*(yes|no)\s*\|', answer, re.IGNORECASE)
+    if match:
+        return match.group(1).lower() == "yes"
+    # Fallback: confidence >= 60 counts as detected
+    conf = parse_confidence(answer)
+    if conf >= 0:
+        return conf >= 60
+    return False

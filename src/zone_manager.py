@@ -3,14 +3,18 @@ zone_manager.py
 ───────────────
 Manages the forbidden zone polygon.
 
+Fixes vs previous version:
+  • Backspace works on macOS — key 127 (Delete) AND key 8 both undo last point.
+  • 4+ point polygon draws correctly — uses cv2.convexHull so the fill never
+    self-intersects regardless of click order.
+  • Editor window gets WINDOW_NORMAL flag + explicit focus pump so Enter/Esc
+    are reliably received on macOS.
+  • Points are numbered so you know which one backspace will remove.
+
 Persistence:
   • Saved to data/zone.json on first draw.
   • Loaded silently on every subsequent run — editor never opens again.
   • To redraw: delete data/zone.json and restart.
-
-FREE ZONE label:
-  • Placed at the visual centroid of the FREE area (points outside the
-    forbidden polygon), so it always sits in the actual free space.
 """
 
 import cv2
@@ -63,51 +67,94 @@ def _compute_free_label_pos(w: int, h: int) -> tuple[int, int]:
 
 # ── Interactive editor ────────────────────────────────────────────────────────
 
+# Shared list mutated by mouse callback
+_editor_points: list[tuple[int, int]] = []
+
 def _mouse_callback(event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONDOWN:
-        param.append((x, y))
+        _editor_points.append((x, y))
 
 
 def _run_editor(frame: np.ndarray) -> list[tuple[int, int]]:
-    points: list[tuple[int, int]] = []
-    win = "Draw Forbidden Zone  —  Enter to confirm  |  Esc to cancel"
-    cv2.namedWindow(win)
-    cv2.setMouseCallback(win, _mouse_callback, points)
+    global _editor_points
+    _editor_points = []
+
+    win = "Zone Editor"
+    cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(win, frame.shape[1], frame.shape[0])
+    cv2.setMouseCallback(win, _mouse_callback)
+
+    # Pump a few frames so macOS gives the window keyboard focus
+    for _ in range(5):
+        cv2.imshow(win, frame)
+        cv2.waitKey(30)
 
     while True:
         display = frame.copy()
         h, w = display.shape[:2]
+        pts = _editor_points
 
-        if len(points) >= 3:
-            pts_arr = np.array(points, dtype=np.int32)
+        # ── Draw polygon preview ──────────────────────────────────────────────
+        if len(pts) >= 3:
+            pts_arr = np.array(pts, dtype=np.int32)
+
+            # convexHull keeps the fill correct regardless of click order
+            hull = cv2.convexHull(pts_arr)
+
             overlay = display.copy()
-            cv2.fillPoly(overlay, [pts_arr], (0, 0, 180))
+            cv2.fillPoly(overlay, [hull], (0, 0, 180))
             cv2.addWeighted(overlay, 0.35, display, 0.65, 0, display)
-            cv2.polylines(display, [pts_arr], isClosed=True, color=(0, 0, 255), thickness=2)
 
-        for i, pt in enumerate(points):
-            cv2.circle(display, pt, 6, (0, 0, 255), -1)
-            if i > 0:
-                cv2.line(display, points[i - 1], pt, (0, 0, 255), 2)
+            # Draw actual click-order outline in dim colour
+            cv2.polylines(display, [pts_arr], isClosed=True,
+                          color=(80, 80, 255), thickness=1)
+            # Draw convex hull outline prominently
+            cv2.polylines(display, [hull], isClosed=True,
+                          color=(0, 0, 255), thickness=2)
 
+        elif len(pts) == 2:
+            cv2.line(display, pts[0], pts[1], (0, 0, 255), 2)
+
+        # ── Draw numbered points ──────────────────────────────────────────────
+        for i, pt in enumerate(pts):
+            cv2.circle(display, pt, 7, (0, 0, 255), -1)
+            cv2.circle(display, pt, 7, (255, 255, 255), 1)
+            cv2.putText(display, str(i + 1), (pt[0] + 9, pt[1] - 5),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 0), 2)
+
+        # ── Instructions ─────────────────────────────────────────────────────
+        instructions = [
+            "Left-click: place point",
+            "Backspace / Delete: undo last point",
+            "Enter: confirm (need >= 3 pts)",
+            "Esc: cancel",
+        ]
+        for j, line in enumerate(instructions):
+            cv2.putText(display, line,
+                        (10, h - 12 - (len(instructions) - 1 - j) * 22),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.52, (255, 255, 255), 1,
+                        cv2.LINE_AA)
+
+        status_col = (0, 220, 100) if len(pts) >= 3 else (0, 200, 255)
         cv2.putText(display,
-                    "Left-click: add point | Backspace: undo | Enter: confirm | Esc: cancel",
-                    (10, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
-        cv2.putText(display, f"Points placed: {len(points)}  (need >= 3)",
-                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 200, 255), 2)
+                    f"Points: {len(pts)}  {'— ready, press Enter' if len(pts) >= 3 else '(need >= 3)'}",
+                    (10, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.8, status_col, 2, cv2.LINE_AA)
 
         cv2.imshow(win, display)
         key = cv2.waitKey(20) & 0xFF
-        if key == 13 and len(points) >= 3:
+
+        if key in (13, 10) and len(pts) >= 3:   # Enter / Return
             break
-        elif key == 27:
-            points = []
+        elif key == 27:                           # Esc — cancel
+            _editor_points = []
             break
-        elif key == 8 and points:
-            points.pop()
+        elif key in (8, 127) and pts:             # Backspace (8) or Delete (127)
+            _editor_points.pop()
 
     cv2.destroyWindow(win)
-    return points
+    # Small pause so the window teardown doesn't swallow the next imshow
+    cv2.waitKey(100)
+    return list(_editor_points)
 
 
 # ── Public init ───────────────────────────────────────────────────────────────
@@ -127,6 +174,11 @@ def init_zone(frame: np.ndarray) -> bool:
         if len(pixel_pts) < 3:
             print("[ZoneManager] Editor cancelled — no forbidden zone.")
             return False
+
+        # Store the convex hull point order so the saved polygon is always valid
+        hull_pts = cv2.convexHull(np.array(pixel_pts, dtype=np.int32))
+        pixel_pts = [tuple(p[0]) for p in hull_pts]
+
         norm_pts = [(px / w, py / h) for px, py in pixel_pts]
         _save_zone(norm_pts)
 
@@ -140,6 +192,11 @@ def has_zone() -> bool:
     return _forbidden_pts is not None
 
 
+def get_zone_pts() -> Optional[np.ndarray]:
+    """Returns the forbidden zone polygon (int32 numpy array) or None."""
+    return _forbidden_pts.copy() if _forbidden_pts is not None else None
+
+
 # ── Geometry ──────────────────────────────────────────────────────────────────
 
 def point_in_zone(x: int, y: int) -> bool:
@@ -150,8 +207,8 @@ def point_in_zone(x: int, y: int) -> bool:
 
 def body_centre_in_zone(pose_landmarks, frame_width: int, frame_height: int) -> bool:
     """
-    Uses torso midpoint (avg of shoulders + hips) — a hand crossing the
-    line alone will NOT trigger this.
+    Uses torso midpoint (avg of shoulders + hips).
+    A hand crossing the line alone will NOT trigger this.
     MediaPipe indices: 11=L-shoulder, 12=R-shoulder, 23=L-hip, 24=R-hip
     """
     if _forbidden_pts is None or not pose_landmarks:
@@ -169,12 +226,13 @@ def body_centre_in_zone(pose_landmarks, frame_width: int, frame_height: int) -> 
 # ── Drawing ───────────────────────────────────────────────────────────────────
 
 def _put_text_with_bg(frame, text, pos, scale, colour, thickness=2):
-    """Draw text with a dark semi-transparent background for readability."""
     (tw, th), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
     x, y = pos
     pad = 4
     overlay = frame.copy()
-    cv2.rectangle(overlay, (x - pad, y - th - pad), (x + tw + pad, y + baseline + pad),
+    cv2.rectangle(overlay,
+                  (x - pad, y - th - pad),
+                  (x + tw + pad, y + baseline + pad),
                   (0, 0, 0), -1)
     cv2.addWeighted(overlay, 0.55, frame, 0.45, 0, frame)
     cv2.putText(frame, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, colour, thickness)
@@ -184,17 +242,17 @@ def draw_zones(frame: np.ndarray, alert_active: bool = False) -> np.ndarray:
     h, w = frame.shape[:2]
 
     if _forbidden_pts is not None:
-        # Fill
         overlay = frame.copy()
-        cv2.fillPoly(overlay, [_forbidden_pts], (0, 0, 200) if alert_active else (0, 0, 255))
-        cv2.addWeighted(overlay, 0.45 if alert_active else 0.25, frame, 1 - (0.45 if alert_active else 0.25), 0, frame)
+        cv2.fillPoly(overlay, [_forbidden_pts],
+                     (0, 0, 200) if alert_active else (0, 0, 255))
+        alpha = 0.45 if alert_active else 0.25
+        cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
-        # Border
         cv2.polylines(frame, [_forbidden_pts], isClosed=True,
                       color=(0, 50, 255) if alert_active else (0, 0, 255),
                       thickness=3 if alert_active else 2)
 
-        # FORBIDDEN ZONE label — at polygon centroid
+        # FORBIDDEN ZONE label at centroid
         M = cv2.moments(_forbidden_pts)
         if M["m00"] != 0:
             fcx = int(M["m10"] / M["m00"])
@@ -207,7 +265,7 @@ def draw_zones(frame: np.ndarray, alert_active: bool = False) -> np.ndarray:
         _put_text_with_bg(frame, label, (lx, fcy), 0.85,
                           (0, 80, 255) if alert_active else (0, 0, 255), 2)
 
-    # FREE ZONE label — at free-area centroid
+    # FREE ZONE label at free-area centroid
     if _free_label_pos is not None:
         flx, fly = _free_label_pos
         label = "FREE ZONE"

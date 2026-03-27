@@ -147,3 +147,13 @@
 [2026-03-27 12:07:36] INTRUSION detected. AI context: bottle: No | a person with a bottle: Yes. | cap: No
 [2026-03-27 12:07:36] INTRUSION: Person in forbidden zone | AI: bottle: No | a person with a bottle: Yes. | cap: No
 [2026-03-27 12:07:41] Zone cleared.
+[2026-03-27 13:01:25] INTRUSION detected. AI context: cap: ... | preson: ... | person: ...
+[2026-03-27 13:01:25] INTRUSION: Person in forbidden zone | AI: cap: ... | preson: ... | person: ...
+[2026-03-27 13:01:41] Zone cleared.
+[2026-03-27 13:02:24] INTRUSION detected. AI context: cap: CONFIDENCE: 50% | No | There is no cap in the image. | preson: CONFIDENCE: 50% | No | There is no person in the image. | person: ...
+[2026-03-27 13:02:24] INTRUSION: Person in forbidden zone | AI: cap: CONFIDENCE: 50% | No | There is no cap in the image. | preson: CONFIDENCE: 50% | No | There is no person in the image. | person: ...
+[2026-03-27 13:02:24] Zone cleared.
+[2026-03-27 13:02:32] OBJECT DETECTED [person] (50%): CONFIDENCE: 50% | Yes | There is a person in the image.
+[2026-03-27 13:02:57] INTRUSION detected. AI context: cap: CONFIDENCE: 50% | No | There is no cap in the image. | preson: CONFIDENCE: 50% | No | There is no person in the image. | person: CONFIDENCE: 50% | Yes | There is a person in the image.
+[2026-03-27 13:02:57] INTRUSION: Person in forbidden zone | AI: cap: CONFIDENCE: 50% | No | There is no cap in the image. | preson: CONFIDENCE: 50% | No | There is no person in the image. | person: CONFIDENCE: 50% | Yes | There is a person in the image.
+[2026-03-27 13:02:57] Zone cleared.
