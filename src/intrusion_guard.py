@@ -1,28 +1,12 @@
-"""
-intrusion_guard.py
-──────────────────
-2-second dwell-timer state machine.
-
-Rules:
-  • A person must have their BODY CENTRE inside the forbidden zone
-    continuously for >= INTRUSION_DWELL_SECONDS before an intrusion
-    is declared.
-  • The moment the body centre leaves the zone the timer resets.
-  • This cleanly filters out a hand or arm briefly crossing the line,
-    because body_centre_in_zone() uses the torso midpoint (hips + shoulders).
-  • Once an intrusion is declared the guard stays in INTRUDING state
-    (so the caller can keep the visual alert on) until the person leaves.
-"""
-
 import time
 from enum import Enum, auto
 from src import config
 
 
 class GuardState(Enum):
-    CLEAR     = auto()   # Nobody in zone
-    DWELLING  = auto()   # Body in zone but not long enough yet
-    INTRUDING = auto()   # Confirmed intrusion
+    CLEAR     = auto()
+    DWELLING  = auto()
+    INTRUDING = auto()
 
 
 class IntrusionGuard:
@@ -31,7 +15,6 @@ class IntrusionGuard:
         self._dwell_start: float = 0.0
         self.dwell_seconds: float = getattr(config, 'INTRUSION_DWELL_SECONDS', 2.0)
 
-    # ── Public API ────────────────────────────────────────────────────────────
 
     def update(self, body_in_zone: bool) -> tuple[GuardState, float]:
         """
@@ -48,7 +31,6 @@ class IntrusionGuard:
             self._dwell_start = 0.0
             return self._state, 0.0
 
-        # Body is in zone
         if self._state == GuardState.CLEAR:
             self._state = GuardState.DWELLING
             self._dwell_start = now
@@ -60,7 +42,6 @@ class IntrusionGuard:
                 self._state = GuardState.INTRUDING
             return self._state, progress
 
-        # INTRUDING — stay intruding until body leaves
         return GuardState.INTRUDING, 1.0
 
     @property

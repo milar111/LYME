@@ -218,4 +218,12 @@ __marimo__/
 #Data 
 data/
 !data/zone.json
-!data/
+!data/context.json
+
+#Task
+*.task
+
+#Tests
+test.py
+run.sh
+test_qwen.py

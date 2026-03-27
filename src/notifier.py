@@ -1,18 +1,3 @@
-"""
-notifier.py
-───────────
-Sends push notifications via ntfy.sh — completely free, no account required.
-
-Setup (one-time, ~2 minutes):
-  1. Install the ntfy app on your phone (iOS / Android — search "ntfy").
-  2. Open the app → tap "+" → Subscribe to topic.
-  3. Enter the topic string you set in config.NTFY_TOPIC  (e.g. "lyme-cam-a8f3x")
-     — keep it hard to guess, it acts as your private channel.
-  4. That's it.  Notifications from this script will appear instantly.
-
-No login, no API key, no server to run.
-"""
-
 import urllib.request
 import urllib.error
 import json
@@ -21,7 +6,6 @@ from src import config
 
 
 def _do_send(title: str, message: str, priority: str, snapshot_path: str | None):
-    """Blocking send — always called from a background thread."""
     topic = getattr(config, 'NTFY_TOPIC', '')
     if not topic:
         print("[Notifier] NTFY_TOPIC not set in config — skipping notification.")
@@ -51,10 +35,6 @@ def _do_send(title: str, message: str, priority: str, snapshot_path: str | None)
 def send(title: str, message: str,
          priority: str = "high",
          snapshot_path: str | None = None):
-    """
-    Fire-and-forget push notification.
-    priority: "min" | "low" | "default" | "high" | "urgent"
-    """
     threading.Thread(
         target=_do_send,
         args=(title, message, priority, snapshot_path),
@@ -62,7 +42,6 @@ def send(title: str, message: str,
     ).start()
 
 
-# ── Convenience wrappers ──────────────────────────────────────────────────────
 
 def intrusion_alert(ai_description: str = ""):
     msg = "Person detected in forbidden zone."

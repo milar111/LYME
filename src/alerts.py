@@ -37,7 +37,7 @@ def log_event(message: str):
 
 def fire_alert(frame, event_type: str, description: str, ai_answer: str = ""):
     """
-    Main alert function - now strictly local logging and snapshots.
+    Main alert function - strictly local logging and snapshots.
     """
     if not _cooldown_ok(event_type):
         return 
@@ -46,7 +46,6 @@ def fire_alert(frame, event_type: str, description: str, ai_answer: str = ""):
 
     def _local_process():
         log_event(f"{event_type.upper()}: {description}" + (f" | AI: {ai_answer}" if ai_answer else ""))
-        # Only save a local picture for record-keeping
         save_snapshot(frame_copy, event_type)
 
     threading.Thread(target=_local_process, daemon=True).start()

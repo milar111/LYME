@@ -1,19 +1,3 @@
-"""
-tracker.py
-──────────
-Wraps three MediaPipe LIVE_STREAM models:
-  • PoseLandmarker    → person detection + raw landmarks for zone geometry
-  • ObjectDetector    → object class labels
-  • GestureRecognizer → hand gesture labels
-
-Key fixes vs original:
-  • BGR → RGB conversion before wrapping in mp.Image
-  • Each model gets its own mp.Image instance (no shared buffer)
-  • Monotonic timestamp counter (MediaPipe rejects non-increasing timestamps)
-  • Exposes raw_pose_landmarks for body-centre-in-zone calculations
-  • close() method for clean shutdown
-"""
-
 import mediapipe as mp
 import urllib.request
 import numpy as np
@@ -27,8 +11,6 @@ class VisionTracker:
         self.current_gesture = "NO HAND"
         self.current_objects: list[str] = []
 
-        # Raw pose landmarks from the most recent callback — used by zone_manager
-        # to compute the torso midpoint rather than checking any single landmark.
         self.raw_pose_landmarks = None
 
         self._timestamp_ms: int = 0
@@ -60,7 +42,6 @@ class VisionTracker:
         )
         self.gesture_recognizer = mp.tasks.vision.GestureRecognizer.create_from_options(gest_options)
 
-    # ── Model download ────────────────────────────────────────────────────────
 
     def _init_models(self):
         models = {
@@ -83,7 +64,6 @@ class VisionTracker:
                 urllib.request.urlretrieve(url, path)
                 print(f"  ✓ {path} ready.")
 
-    # ── Async callbacks ───────────────────────────────────────────────────────
 
     def _pose_callback(self, result, output_image, timestamp_ms):
         if result.pose_landmarks:
@@ -106,7 +86,6 @@ class VisionTracker:
         else:
             self.current_gesture = "NO HAND"
 
-    # ── Timestamp helper ──────────────────────────────────────────────────────
 
     def _next_timestamp(self) -> int:
         """Strictly increasing millisecond timestamp — MediaPipe requirement."""
@@ -116,7 +95,6 @@ class VisionTracker:
         self._timestamp_ms = now_ms
         return now_ms
 
-    # ── Main entry point ──────────────────────────────────────────────────────
 
     def process_frame(self, frame: np.ndarray):
         """
@@ -124,7 +102,7 @@ class VisionTracker:
         Returns (person_detected, gesture, objects, raw_pose_landmarks).
         raw_pose_landmarks is a list of NormalizedLandmark or None.
         """
-        rgb = frame[:, :, ::-1].copy()   # BGR → RGB
+        rgb = frame[:, :, ::-1].copy()
 
         self.pose_landmarker.detect_async(
             mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb),
@@ -146,7 +124,6 @@ class VisionTracker:
             self.raw_pose_landmarks,
         )
 
-    # ── Cleanup ───────────────────────────────────────────────────────────────
 
     def close(self):
         self.pose_landmarker.close()

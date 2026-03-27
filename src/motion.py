@@ -4,11 +4,6 @@ from src import config
 
 
 class MotionDetector:
-    """
-    Lightweight frame-differencing motion detector.
-    Acts as a cheap gate before running heavy ML models.
-    """
-
     def __init__(self):
         self._bg_subtractor = cv2.createBackgroundSubtractorMOG2(
             history=500,
@@ -17,16 +12,11 @@ class MotionDetector:
         )
 
     def detect(self, frame: np.ndarray) -> tuple:
-        """
-        Returns (motion_detected: bool, mask: np.ndarray).
-        mask is a grayscale image showing where motion occurred.
-        """
         fg_mask = self._bg_subtractor.apply(frame)
 
         fg_mask = cv2.GaussianBlur(fg_mask, (config.MOTION_BLUR_SIZE, config.MOTION_BLUR_SIZE), 0)
         _, fg_mask = cv2.threshold(fg_mask, 25, 255, cv2.THRESH_BINARY)
 
-        # Fix: use explicit kernel instead of None
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
         fg_mask = cv2.dilate(fg_mask, kernel, iterations=config.MOTION_DILATE_ITERATIONS)
 
@@ -46,10 +36,6 @@ class MotionDetector:
 
 
 def is_in_alert_zone(frame: np.ndarray, mask: np.ndarray) -> bool:
-    """
-    Returns True if motion overlaps with the configured ALERT_ZONE polygon.
-    If ALERT_ZONE is None, always returns True (whole frame).
-    """
     if config.ALERT_ZONE is None:
         return True
 
@@ -60,7 +46,6 @@ def is_in_alert_zone(frame: np.ndarray, mask: np.ndarray) -> bool:
     )
 
     zone_mask = np.zeros((h, w), dtype=np.uint8)
-    # Fix: wrap pts in list, pass color as tuple
     cv2.fillPoly(zone_mask, [pts], (255,))
 
     overlap = cv2.bitwise_and(mask, zone_mask)
