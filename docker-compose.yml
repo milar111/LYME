@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  lyme-camera:
+    build: .
+    container_name: lyme_camera
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./data:/app/data
+    
+    # Required for Linux/Windows to pass the USB or built-in webcam to docker
+    # If the camera is at a different index (e.g. video1), change it here and in config.py
+    devices:
+      - /dev/video0:/dev/video0
+    
+    restart: unless-stopped

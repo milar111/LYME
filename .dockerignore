@@ -1,0 +1,9 @@
+.git
+.venv
+__pycache__
+data/
+*.pyc
+.DS_Store
+.gemini
+run.sh
+test_qwen.py
