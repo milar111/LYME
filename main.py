@@ -1,53 +1,202 @@
 import warnings
 import logging
-import cv2
 import time
-import numpy as np
-from src import actions
+import threading
+import cv2
+from src import actions, config
 from src.tracker import VisionTracker
+from src.zone_manager import init_zone, draw_zones, body_centre_in_zone
+from src.intrusion_guard import IntrusionGuard, GuardState
+from src.context_manager import init_context, build_blip_questions, get_summary
+from src import notifier
+from src.alerts import fire_alert, log_event
 
 warnings.filterwarnings("ignore")
 logging.getLogger("transformers").setLevel(logging.ERROR)
 
-user_question = input("What should the LLM analyze?: ")
-
-print("Loading model... please wait.")
+print("Loading Qwen2.5-VL model...")
 actions.init_model()
+
+print("Initialising MediaPipe tracker...")
 tracker = VisionTracker()
 
-cap = cv2.VideoCapture(0)
-last_ai_check = 0
-current_llm_answer = "Waiting for LLM..."
+cap = cv2.VideoCapture(config.CAMERA_SOURCE)
+if not cap.isOpened():
+    raise RuntimeError("Cannot open camera.")
+
+ok, first_frame = cap.read()
+if not ok:
+    raise RuntimeError("Cannot read from camera.")
+first_frame = cv2.flip(first_frame, 1)
+
+zone_active = init_zone(first_frame)
+print(f"[main] Zone: {'active' if zone_active else 'none — monitor-only mode'}")
+
+init_context()
+_ai_questions = build_blip_questions()
+_ai_idx = 0
+_context_summary = get_summary()
+
+print(f"\n[main] Monitoring for: {_context_summary}")
+print("[main] Running — press Q to quit.\n")
+
+guard = IntrusionGuard()
+prev_guard_state: GuardState = GuardState.CLEAR
+
+_ai_answers: list[str] = ["..." for _ in _ai_questions]
+_ai_lock = threading.Lock()
+_ai_busy = False
+last_ai_check: float = 0.0
+_AI_INTERVAL = 3.0
+
+_last_cleared_push: float = 0.0
+_CLEARED_PUSH_COOLDOWN = 60.0
+
+_flash_until: float = 0.0
+_FLASH_DURATION = 0.4
+
+def _run_ai_async(frame_copy, question: str, answer_idx: int):
+    global _ai_busy
+    try:
+        answer = actions.query_frame(frame_copy, question)
+        with _ai_lock:
+            _ai_answers[answer_idx] = answer
+    except Exception as e:
+        with _ai_lock:
+            _ai_answers[answer_idx] = f"err: {e}"
+    finally:
+        _ai_busy = False
+
+def _put_label(frame, text: str, x: int, y: int,
+               colour=(0, 255, 0), scale: float = 0.78, thickness: int = 2):
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    (tw, th), baseline = cv2.getTextSize(text, font, scale, thickness)
+    pad = 5
+    overlay = frame.copy()
+    cv2.rectangle(overlay,
+                  (x - pad, y - th - pad),
+                  (x + tw + pad, y + baseline + pad),
+                  (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.55, frame, 0.45, 0, frame)
+    cv2.putText(frame, text, (x, y), font, scale, colour, thickness)
+
+def _draw_hud(frame, person: bool, gesture: str, objects: list,
+              guard_state: GuardState, dwell_progress: float,
+              alert_active: bool) -> None:
+    h, w = frame.shape[:2]
+
+    draw_zones(frame, alert_active=alert_active)
+
+    if alert_active:
+        if int((time.monotonic() - _flash_until) / _FLASH_DURATION) % 2 == 0:
+            cv2.rectangle(frame, (0, 0), (w - 1, h - 1), (0, 0, 255), 8)
+
+    SCALE = 0.78
+    LINE_H = 34
+    x0, y0 = 10, 36
+
+    person_colour = (0, 0, 255) if (person and zone_active and guard_state != GuardState.CLEAR) else (0, 255, 0)
+    _put_label(frame,
+               f"Person: {'IN ZONE' if (person and guard_state != GuardState.CLEAR) else ('detected' if person else 'none')}",
+               x0, y0, person_colour, SCALE)
+
+    _put_label(frame, f"Gesture: {gesture}", x0, y0 + LINE_H, (0, 255, 0), SCALE)
+
+    obj_text = ", ".join(objects) if objects else "none"
+    _put_label(frame, f"Objects: {obj_text}", x0, y0 + LINE_H * 2, (0, 255, 0), SCALE)
+
+    items = get_summary().split(", ")
+    with _ai_lock:
+        answers = list(_ai_answers)
+    for i, (item, ans) in enumerate(zip(items, answers)):
+        short_item = item if len(item) <= 28 else item[:25] + "..."
+        colour = (0, 80, 255) if ans.lower().startswith("yes") else (0, 220, 255)
+        _put_label(frame, f"AI [{short_item}]: {ans}",
+                   x0, y0 + LINE_H * (3 + i), colour, SCALE)
+
+    status_y = y0 + LINE_H * (3 + len(items))
+    status_colour = (0, 0, 255) if alert_active else (180, 180, 180)
+    _put_label(frame, f"Zone: {guard_state.name}", x0, status_y, status_colour, SCALE)
+
+    if guard_state == GuardState.DWELLING and dwell_progress > 0:
+        bar_w = int((w - 20) * dwell_progress)
+        cv2.rectangle(frame, (10, h - 22), (w - 10, h - 8), (40, 40, 40), -1)
+        cv2.rectangle(frame, (10, h - 22), (10 + bar_w, h - 8), (0, 165, 255), -1)
+        _put_label(frame, "Confirming intrusion...", 10, h - 26,
+                   (0, 165, 255), 0.6, 1)
+
+    if alert_active:
+        banner = "!! INTRUSION DETECTED !!"
+        font = cv2.FONT_HERSHEY_DUPLEX
+        scale = 1.2
+        (bw, bh), _ = cv2.getTextSize(banner, font, scale, 2)
+        bx = (w - bw) // 2
+        by = h - 18
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (bx - 8, by - bh - 8), (bx + bw + 8, by + 8),
+                      (0, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
+        cv2.putText(frame, banner, (bx, by), font, scale, (0, 0, 255), 2)
 
 try:
     while cap.isOpened():
-        success, frame = cap.read()
-        if not success: break
-        
+        ok, frame = cap.read()
+        if not ok:
+            break
         frame = cv2.flip(frame, 1)
-        
-        person, gesture, objects = tracker.process_frame(frame)
-        
-        if time.time() - last_ai_check > 10:
-            try:
-                current_llm_answer = actions.query_mountain(frame, user_question)
-            except Exception as e:
-                current_llm_answer = f"Error: {str(e)}"
+        h, w = frame.shape[:2]
+
+        person, gesture, objects, pose_landmarks = tracker.process_frame(frame)
+
+        body_in = body_centre_in_zone(pose_landmarks, w, h) if zone_active else False
+
+        prev_guard_state = guard.state
+        guard_state, dwell_progress = guard.update(body_in)
+        alert_active = guard.is_intruding()
+
+        with _ai_lock:
+            ai_context = " | ".join(
+                f"{item}: {ans}"
+                for item, ans in zip(get_summary().split(", "), _ai_answers)
+            )
+
+        if guard.just_triggered(prev_guard_state):
+            _flash_until = time.monotonic()
+            log_event(f"INTRUSION detected. AI context: {ai_context}")
+            fire_alert(frame, "intrusion", "Person in forbidden zone",
+                       ai_answer=ai_context)
+            notifier.intrusion_alert(ai_description=ai_context)
+
+        if prev_guard_state == GuardState.INTRUDING and guard_state == GuardState.CLEAR:
+            log_event("Zone cleared.")
+            now = time.monotonic()
+            if now - _last_cleared_push >= _CLEARED_PUSH_COOLDOWN:
+                _last_cleared_push = now
+                notifier.intrusion_cleared()
+
+        if alert_active:
+            _flash_until = time.monotonic()
+
+        if not _ai_busy and _ai_questions and time.time() - last_ai_check >= _AI_INTERVAL:
+            _ai_busy = True
             last_ai_check = time.time()
+            q_idx = _ai_idx % len(_ai_questions)
+            _ai_idx += 1
+            threading.Thread(
+                target=_run_ai_async,
+                args=(frame.copy(), _ai_questions[q_idx], q_idx),
+                daemon=True
+            ).start()
 
-        obj_text = ", ".join(objects) if objects else "NONE"
-        
-        cv2.putText(frame, f"Person: {person}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        cv2.putText(frame, f"Gesture: {gesture}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        cv2.putText(frame, f"Objects: {obj_text}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        
-        cv2.putText(frame, f"Question: {user_question}", (10, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(frame, f"Answer: {current_llm_answer}", (10, 160), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+        _draw_hud(frame, person, gesture, objects,
+                  guard_state, dwell_progress, alert_active)
 
-        cv2.imshow("Unified Vision AI", frame)
-
+        cv2.imshow("LYME Security Camera", frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
+
 finally:
     cap.release()
     cv2.destroyAllWindows()
+    tracker.close()
+    print("Shutdown complete.")

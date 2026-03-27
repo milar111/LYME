@@ -1,11 +1,11 @@
 import os
 
-#CAMERA_INDEX = 0 
+CAMERA_SOURCE = 0
+AI_MODEL_NAME = "Qwen/Qwen2.5-VL-3B-Instruct"
 
-CAMERA_SOURCE = "https://webcams.pamporovo.me/memfs/20c3c039-2ebe-4e9e-b96a-d26308132ed1_output_0.m3u8?session=4JG9CouqGtEQwXVHDcSAzF"
-AI_MODEL_NAME = "Salesforce/blip-vqa-base"
+LOG_FILE = "data/logs.txt"
+SNAPSHOT_DIR = "data/snapshots"
+ALERT_COOLDOWN_SECONDS = 30
 
-#LOWER_RED = [0, 150, 100]
-#UPPER_RED = [10, 255, 255]
-
-#MIN_AREA = 200
+INTRUSION_DWELL_SECONDS = 2.0
+NTFY_TOPIC = "hacktues"
