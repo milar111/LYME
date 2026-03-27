@@ -38,10 +38,17 @@
   - [6.5. Забранена зона и Intrusion Guard](#65-забранена-зона-и-intrusion-guard)
   - [6.6. Push известия (ntfy.sh)](#66-push-известия-ntfysh)
   - [6.7. Web UI](#67-web-ui)
+  - [6.8. Главен цикъл и модел на нишките (Threading Model)](#68-главен-цикъл-и-модел-на-нишките-threading-model)
+  - [6.9. Flask REST API — Пълна спецификация](#69-flask-rest-api--пълна-спецификация)
+  - [6.10. HUD Рендиране (Heads-Up Display)](#610-hud-рендиране-heads-up-display)
+  - [6.11. Персистентност на данните](#611-персистентност-на-данните)
+  - [6.12. AI Pipeline — Вътрешен поток](#612-ai-pipeline--вътрешен-поток)
+  - [6.13. Зависимости и технологичен стек](#613-зависимости-и-технологичен-стек)
 - [7. Инсталация и Стартиране](#7-инсталация-и-стартиране)
   - [7.1. Локална инсталация (без Docker)](#71-локална-инсталация-без-docker)
   - [7.2. Docker контейнеризация](#72-docker-контейнеризация)
   - [7.3. Конфигурация](#73-конфигурация)
+  - [7.4. Тестване на Docker контейнеризацията](#74-тестване-на-docker-контейнеризацията)
 
 ---
 
@@ -279,6 +286,139 @@ main.py                     ← Входна точка: стартира кам
 * **Event Log** — Хронологичен лог на всички събития.
 * **Бутон "Shutdown"** — Спира системата.
 
+### 6.8. Главен цикъл и модел на нишките (Threading Model)
+Системата използва многонишков (multi-threaded) модел, за да осигури едновременна работа на видео обработката и уеб сървъра:
+
+**Стартова последователност:**
+1. `actions.init_model()` — зарежда Qwen2.5-VL модела в паметта (~6 GB RAM на CPU).
+2. `VisionTracker()` — инициализира трите MediaPipe модела; при първо стартиране ги изтегля автоматично от Google Storage.
+3. `cv2.VideoCapture()` — отваря камерата (индексът се конфигурира от `config.CAMERA_SOURCE`).
+4. `init_zone()` / `init_context()` — зареждат запазената забранена зона и списъка с наблюдавани обекти от `data/`.
+5. Flask сървърът се стартира в **daemon нишка** (`threading.Thread(target=run_flask, daemon=True)`).
+
+**Нишки в системата:**
+
+| Нишка | Описание |
+|-------|----------|
+| **Main Thread** | Главният цикъл `while _running` — чете кадри от камерата, обработва ги чрез MediaPipe, проверява зоната, рисува HUD-а и обновява `WebUIState`. |
+| **Flask Thread** | Daemon нишка — сервира уеб интерфейса на порт 4000 и обслужва REST API заявки. |
+| **Qwen AI Thread** | Порожда се при нужда (на всеки `_AI_INTERVAL = 5s`) — изпълнява `_run_qwen_async()` в отделна daemon нишка. Използва `_ai_busy` флаг за да предотврати припокриване. |
+| **Notifier Thread** | Порожда се при всяко push известие — изпраща HTTP POST към ntfy.sh асинхронно. |
+| **Alert Thread** | Порожда се при всяка аларма — записва snapshot и логва събитието без да блокира видео потока. |
+
+**Синхронизация:** Споделеното състояние (`WebUIState`, `_answers`, `_questions`, `_items`) е защитено с `threading.Lock` обекти. Флагът `_ai_busy` предотвратява стартирането на втора Qwen заявка, докато предишната не е завършила.
+
+**Грациозно спиране:** Натискането на `Ctrl+C` или извикването на `POST /shutdown` задава `_running = False`, което прекъсва главния цикъл. Блокът `finally` освобождава камерата и затваря MediaPipe моделите.
+
+### 6.9. Flask REST API — Пълна спецификация
+Flask сървърът е достъпен на `http://localhost:4000` и предоставя следните ендпойнти:
+
+| Метод | Ендпойнт | Описание |
+|-------|----------|----------|
+| `GET` | `/` | Сервира `index.html` — уеб интерфейса |
+| `GET` | `/video_feed` | MJPEG стрийм — непрекъснат поток от JPEG кадри с наложен HUD |
+| `GET` | `/status` | JSON: `person_in_sight`, `is_intruding`, `guard_state`, `dwell_progress`, `last_seen_ago`, `frame_count`, `object_alert` |
+| `GET` | `/ai_status` | JSON масив с елементи за всеки наблюдаван обект: `item`, `answer`, `description`, `confidence`, `detected` |
+| `GET` | `/zone` | JSON: текущите нормализирани точки на полигона (или `null`) |
+| `POST` | `/zone` | Приема JSON `{"points": [{x, y}, ...]}` — записва зоната и я зарежда без рестарт |
+| `DELETE` | `/zone` | Изтрива забранената зона от паметта и от `data/zone.json` |
+| `GET` | `/context` | JSON масив с имена на наблюдавани обекти |
+| `POST` | `/context` | Приема JSON `{"item": "bottle"}` — добавя нов обект за AI наблюдение |
+| `DELETE` | `/context/<idx>` | Премахва обект по индекс от списъка |
+| `POST` | `/shutdown` | Спира системата — задава `_running = False` |
+| `GET` | `/debug/ai_crop` | Debug ендпойнт — показва изрязания кадър, който Qwen вижда |
+
+**MJPEG потокът** (`/video_feed`) е реализиран чрез `multipart/x-mixed-replace` MIME тип. Браузърът получава непрекъснат поток от JPEG изображения, разделени с boundary маркери — не е необходим WebSocket или допълнителен JavaScript за видео визуализация.
+
+### 6.10. HUD Рендиране (Heads-Up Display)
+Всеки кадър от видео потока се обогатява с визуални елементи преди кодирането му в JPEG:
+
+* **Зони** (`draw_zones()`): Забранената зона се рисува като полупрозрачен червен полигон (`cv2.fillPoly` + `cv2.addWeighted` с alpha = 0.25). При активна аларма, прозрачността се увеличава до 0.45 и контурът се удебелява. Текстът "FORBIDDEN ZONE" се позиционира в центъра на полигона, а "FREE ZONE" — в средната точка на свободната област.
+
+* **AI Confidence Overlay** (`_draw_ai_confidence_hud()`): В горния ляв ъгъл се рендира полупрозрачен панел с информация за всеки наблюдаван обект:
+  - `[?]` сиво — AI все още не е сканирал
+  - `[OK]` зелено — обектът не е засечен (confidence < 40%)
+  - `[~]` оранжево — несигурен резултат (40-59%)
+  - `[!]` червено — обектът е засечен (confidence ≥ 60%)
+
+* **Dwell Progress Bar**: Когато човек е в зоната и системата е в състояние `DWELLING`, в долната част на кадъра се рисува оранжева лента, запълваща се от 0% до 100% за `INTRUSION_DWELL_SECONDS` секунди.
+
+* **Intrusion Banner**: При потвърдено нарушение (`INTRUDING`), в долната част се изписва мигащ червен банер "!! INTRUSION DETECTED !!" върху полупрозрачен черен фон. Рамката на целия кадър става червена.
+
+### 6.11. Персистентност на данните
+Системата съхранява данни в директория `data/`, която се създава автоматично при първо стартиране:
+
+| Файл / Директория | Описание |
+|-------------------|----------|
+| `data/zone.json` | Нормализирани координати на забранената зона `[[x, y], ...]` |
+| `data/context.json` | JSON масив с имена на наблюдавани обекти `["bottle", "knife"]` |
+| `data/logs.txt` | Текстов лог с времеви печат за всяко събитие (intrusion, object detection) |
+| `data/snapshots/` | JPEG изображения, записвани автоматично при аларма (`intrusion_YYYYMMDD_HHMMSS.jpg`) |
+| `data/.model_initialized` | Флагов файл, указващ че моделите са инициализирани |
+
+При Docker контейнеризация, `data/` директорията се монтира като volume (`./data:/app/data`), така че данните преживяват рестартиране на контейнера.
+
+### 6.12. AI Pipeline — Вътрешен поток
+AI обработката следва строго определен поток, оптимизиран за минимална интерференция с видео потока:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Главен цикъл (Main Thread)                  │
+│                                                                     │
+│  1. Проверка: изминали ли са >= 5s от последното AI сканиране?      │
+│  2. Проверка: _ai_busy == False? (предишната заявка завършила ли е?)│
+│  3. Проверка: има ли поне 1 обект за наблюдение?                   │
+│  4. Проверка: зоната активна ли е?                                 │
+│                                                                     │
+│  Ако всичко е ✓ → порожда нова нишка с _run_qwen_async()          │
+│  Обектите се сканират кръгово (round-robin): _blip_idx % len(items)│
+└──────────────────────────┬──────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                     _run_qwen_async() (AI Thread)                  │
+│                                                                     │
+│  1. Изрязва кадъра до bounding rect на забранената зона            │
+│  2. Конвертира BGR → RGB → PIL Image                               │
+│  3. Изгражда chat prompt с image + text                            │
+│  4. Tokenизира чрез AutoProcessor                                   │
+│  5. model.generate(max_new_tokens=64)                              │
+│  6. Декодира отговора: "CONFIDENCE: 85% | yes | A bottle is here"  │
+│  7. Парсва confidence % и yes/no                                    │
+│  8. Записва отговора в _answers[idx] (под _ai_lock)                │
+│                                                                     │
+│  При "yes" + dwell >= 2s + cooldown изтекъл → push известие         │
+│  При "no" → нулира dwell таймера за този обект                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Round-Robin сканиране:** Ако потребителят наблюдава 3 обекта (bottle, knife, bag), системата ги сканира последователно: на 0-та секунда — bottle, на 5-та — knife, на 10-та — bag, на 15-та — отново bottle, и т.н.
+
+**Dwell за обекти:** Подобно на Intrusion Guard, обектите също имат dwell механизъм (`_ITEM_DWELL_SECONDS = 2.0s`). AI трябва да засече обекта поне два пъти последователно, преди да изпрати push известие. Cooldown-ът между push-ове за един и същ обект е `_ITEM_PUSH_COOLDOWN = 60s`.
+
+### 6.13. Зависимости и технологичен стек
+Системата използва следните основни технологии:
+
+| Технология | Версия | Предназначение |
+|------------|--------|---------------|
+| **Python** | 3.10+ | Основен език |
+| **Flask** | 3.1.3 | HTTP сървър и REST API |
+| **OpenCV** (`opencv-python`) | 4.9.0 | Видео захващане, обработка на изображения, HUD рендиране |
+| **MediaPipe** | 0.10.21 | Pose detection, object detection, gesture recognition (LIVE_STREAM) |
+| **PyTorch** | 2.2.2 | Backend за Qwen2.5-VL (CPU inference) |
+| **Transformers** (Hugging Face) | 4.49.0 | Зареждане и inference на Qwen2.5-VL модела |
+| **qwen-vl-utils** | 0.0.14 | Помощни функции за обработка на vision input за Qwen |
+| **Pillow** | 12.1.1 | Конвертиране BGR → RGB → PIL Image за AI модела |
+| **Requests** | 2.33.0 | HTTP заявки (ntfy.sh push нотификации) |
+| **torchvision** | 0.17.2 | Допълнителен модул за PyTorch (зависимост на Transformers) |
+| **accelerate** | 1.13.0 | Оптимизиране на зареждането на модела |
+| **NumPy** | 1.26.4 | Числени операции с масиви (полигони, координати) |
+
+**Външни сервиси:**
+* **ntfy.sh** — безплатен open-source push notification сервис. Не изисква регистрация. Използва се за изпращане на аларми към телефон/браузър.
+* **Google Storage** — за автоматично изтегляне на MediaPipe `.task`/`.tflite` модели при първо стартиране.
+* **Hugging Face Hub** — за изтегляне на Qwen2.5-VL-3B-Instruct модела (~6 GB) при първо стартиране. Кешира се в `~/.cache/huggingface/hub/`.
+
 ---
 
 ## 7. Инсталация и Стартиране
@@ -366,3 +506,109 @@ docker compose up --build     # Преизграждане след промен
 | `NTFY_TOPIC` | `hacktues` | ntfy.sh topic за push известия |
 
 За получаване на известия, инсталирайте ntfy приложението ([ntfy.sh](https://ntfy.sh)) и се абонирайте за topic-а, зададен в `NTFY_TOPIC`.
+
+### 7.4. Тестване на Docker контейнеризацията
+
+#### Предварителни изисквания
+* **Docker Engine** инсталиран и работещ (`docker --version`)
+* **Docker Compose** v2+ (`docker compose version`)
+* За Linux: уеб камера достъпна на `/dev/video0` (проверете с `ls -la /dev/video*`)
+* За Windows: WSL2 с USB passthrough конфигуриран
+
+#### Стъпка 1: Изграждане на образа (Build)
+
+```bash
+# Изграждане без стартиране — проверява дали Dockerfile е валиден
+docker compose build
+
+# Или директно с docker build (за по-детайлен контрол):
+docker build -t lyme-camera .
+```
+
+Успешният build завършва с `Successfully built ...` и не трябва да има грешки. Очаквано време: 3–10 минути (зависи от интернет скоростта за pip install).
+
+#### Стъпка 2: Тест без камера (Smoke Test)
+
+Ако нямате достъп до камера (например на macOS), можете да проверите дали контейнерът стартира коректно и зарежда зависимостите:
+
+```bash
+# Стартиране в интерактивен режим без device mapping
+docker run --rm -it -p 4000:4000 lyme-camera python -c "
+import flask, cv2, mediapipe, torch, transformers
+print('Flask:', flask.__version__)
+print('OpenCV:', cv2.__version__)
+print('MediaPipe:', mediapipe.__version__)
+print('PyTorch:', torch.__version__)
+print('Transformers:', transformers.__version__)
+print()
+print('All dependencies OK ✓')
+"
+```
+
+#### Стъпка 3: Пълно стартиране с камера
+
+```bash
+# На Linux с камера:
+docker compose up --build
+
+# Проверете логовете за успешно стартиране:
+# [main] Loading Qwen2.5-VL model...
+# [main] Initialising MediaPipe tracker...
+# [main] Web UI → http://localhost:4000
+# [main] Running — press Ctrl+C to quit.
+```
+
+#### Стъпка 4: Проверка на здравето на контейнера (Health Check)
+
+```bash
+# Проверка дали контейнерът работи
+docker ps | grep lyme
+
+# Проверка на REST API ендпойнтите
+curl -s http://localhost:4000/status | python3 -m json.tool
+curl -s http://localhost:4000/zone | python3 -m json.tool
+curl -s http://localhost:4000/context | python3 -m json.tool
+curl -s http://localhost:4000/ai_status | python3 -m json.tool
+
+# Проверка на видео потока (трябва да върне MJPEG данни)
+curl -s --max-time 2 http://localhost:4000/video_feed | head -c 100
+```
+
+#### Стъпка 5: Тест на data volume
+
+```bash
+# Проверете дали data/ директорията се монтира правилно
+docker compose up -d
+# Добавете обект за наблюдение чрез API:
+curl -X POST http://localhost:4000/context \
+     -H "Content-Type: application/json" \
+     -d '{"item": "bottle"}'
+
+# Спрете и стартирайте отново — обектът трябва да се запази:
+docker compose down
+docker compose up -d
+curl -s http://localhost:4000/context | python3 -m json.tool
+# Очакван резултат: {"items": ["bottle"]}
+```
+
+#### Стъпка 6: Проверка на ресурсите
+
+```bash
+# Мониторинг на RAM и CPU използване
+docker stats lyme_camera
+
+# Очаквани стойности:
+# - RAM: ~2-3 GB при зареждане, ~6-8 GB при AI inference
+# - CPU: ~30-60% при видео обработка, ~100% при Qwen inference
+```
+
+#### Отстраняване на проблеми (Troubleshooting)
+
+| Проблем | Решение |
+|---------|---------|
+| `Cannot open camera` | Проверете device mapping: `devices: - /dev/video0:/dev/video0` в `docker-compose.yml` |
+| `ModuleNotFoundError` | Преизградете образа: `docker compose build --no-cache` |
+| Контейнерът се срива (OOM) | Увеличете Docker RAM лимита (минимум 8 GB за Qwen модела) |
+| Портът е зает | Променете port mapping: `"4001:4000"` в `docker-compose.yml` |
+| macOS: няма камера | Docker Desktop за macOS не поддържа USB passthrough — използвайте локална инсталация (7.1) |
+| Бавно първо стартиране | Нормално е — Qwen модел (~6 GB) и MediaPipe модели се изтеглят еднократно |
