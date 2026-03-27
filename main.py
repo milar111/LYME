@@ -334,10 +334,55 @@ def _run_qwen_async(frame_copy, question: str, answer_idx: int,
         _ai_busy = False
 
 
+def _draw_ai_confidence_hud(frame) -> None:
+    """Render AI monitoring items + confidence % on the top-left of the frame."""
+    with _ai_lock:
+        items = list(_items)
+        answers = list(_answers)
+    if not items:
+        return
+
+    h, w = frame.shape[:2]
+    line_h = 26
+    pad_x, pad_y = 10, 10
+    bg_w = 220
+
+    # Semi-transparent background
+    overlay = frame.copy()
+    box_h = len(items) * line_h + 8
+    cv2.rectangle(overlay, (pad_x, pad_y), (pad_x + bg_w, pad_y + box_h), (10, 14, 30), -1)
+    cv2.addWeighted(overlay, 0.65, frame, 0.35, 0, frame)
+
+    for i, (item, ans) in enumerate(zip(items, answers)):
+        conf = parse_confidence(ans)
+        detected = parse_detected(ans)
+        y = pad_y + 6 + (i + 1) * line_h - 6
+
+        # Colour by confidence level
+        if conf < 0:
+            color = (120, 120, 120)   # grey — pending
+            icon = "?"
+        elif detected:
+            color = (0, 80, 255)      # red — detected
+            icon = "!"
+        elif conf >= 40:
+            color = (0, 165, 255)     # orange — uncertain
+            icon = "~"
+        else:
+            color = (0, 220, 100)     # green — clear
+            icon = "OK"
+
+        conf_str = f"{conf}%" if conf >= 0 else "…"
+        label = f"[{icon}] {item[:16]:<16} {conf_str:>4}"
+        cv2.putText(frame, label, (pad_x + 6, y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.52, color, 1, cv2.LINE_AA)
+
+
 def _draw_hud(frame, guard_state: GuardState,
               dwell_progress: float, alert_active: bool) -> None:
     h, w = frame.shape[:2]
     draw_zones(frame, alert_active=alert_active)
+    _draw_ai_confidence_hud(frame)
 
     if alert_active:
         if int((time.monotonic() - _flash_until) / _FLASH_DURATION) % 2 == 0:

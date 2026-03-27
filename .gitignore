@@ -215,15 +215,27 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-#Data 
+# ── LYME: Runtime data ─────────────────────────────────────────────────────
 data/
 !data/zone.json
 !data/context.json
 
-#Task
+# ── LYME: AI model weights (large binaries — download on first run) ─────────
+*.tflite
 *.task
 
-#Tests
+# ── LYME: Dev / test scripts ────────────────────────────────────────────────
 test.py
+test_*.py
+test_*.sh
 run.sh
-test_qwen.py
+
+# ── LYME: Docker / containerisation test docs ───────────────────────────────
+docs/containerisation*
+docs/docker_testing*
+container_test*
+CONTAINER_TESTS*
+
+# ── LYME: IDE & editor ──────────────────────────────────────────────────────
+.vscode/
+.idea/

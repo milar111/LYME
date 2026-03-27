@@ -70,12 +70,20 @@ def build_blip_questions() -> list[str]:
     """
     Strict format prompt — Qwen must reply:
     CONFIDENCE: X% | yes or no | one short sentence
+
+    The prompt is deliberately verbose to improve detection of partially
+    visible, occluded, or unusual-angle objects (e.g. a bottle lying on its
+    side or in shadow).
     """
     return [
         (
-            f"Is there a {thing} in this image? "
-            f"Reply with ONLY this format, no extra text: "
-            f"CONFIDENCE: <0-100>% | <yes or no> | <one short sentence>"
+            f"Look very carefully at this image. "
+            f"Is there a '{thing}' (or any similar/related object) visible "
+            f"anywhere in the frame, even partially, at an angle, in shadow, "
+            f"or partially outside the frame? "
+            f"Consider all possible orientations, sizes, and colours. "
+            f"Reply ONLY in this exact format — no extra words, no explanation outside the format: "
+            f"CONFIDENCE: <0-100>% | <yes or no> | <one short sentence describing what you see>"
         )
         for thing in _things_to_watch
     ]

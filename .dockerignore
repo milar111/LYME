@@ -1,9 +1,33 @@
+# Version control & IDE
 .git
+.gitignore
+.vscode
+.idea
+
+# Python virtual environments & caches
 .venv
 __pycache__
-data/
 *.pyc
-.DS_Store
-.gemini
+*.pyo
+
+# Runtime data (created at container start)
+data/
+
+# Test & dev scripts
+test.py
+test_*.py
+test_*.sh
 run.sh
-test_qwen.py
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Gemini / AI assistant
+.gemini
+.agents
+
+# Documentation (not needed in the image)
+README.md
+LICENSE
+docs/
