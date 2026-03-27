@@ -1,0 +1,21 @@
+# KiCad Minimalist Gitignore
+# Only the primary design files will be tracked in Git.
+# Everything else is ignored.
+
+# Ignore everything by default
+*
+
+# Allow the .gitignore file itself
+!/.gitignore
+
+# Allow the 3 mandatory KiCad design files
+!*.kicad_pro
+!*.kicad_sch
+!*.kicad_pcb
+
+# Optional: Allow project-specific symbol and footprint libraries if they exist
+!*.kicad_sym
+!*.kicad_fp
+
+# Ignore all directories (like backups or fabrication) unless they contain one of the allowed files above
+!*/
