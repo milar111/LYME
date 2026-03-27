@@ -115,3 +115,35 @@
 [2026-03-26 15:01:11] Q: does the lift work | A: yes
 [2026-03-26 15:03:17] Q: is the lift working | A: yes
 [2026-03-26 15:03:28] Q: is the lift working | A: yes
+[2026-03-27 10:25:58] INTRUSION: Person confirmed in forbidden zone.
+[2026-03-27 10:25:58] INTRUSION: Person in forbidden zone | AI: yes
+[2026-03-27 10:26:03] Zone cleared.
+[2026-03-27 10:34:39] INTRUSION: Person confirmed in forbidden zone.
+[2026-03-27 10:34:39] INTRUSION: Person in forbidden zone | AI: yes
+[2026-03-27 10:34:48] Zone cleared.
+[2026-03-27 10:34:52] INTRUSION: Person confirmed in forbidden zone.
+[2026-03-27 10:34:55] Zone cleared.
+[2026-03-27 10:41:27] INTRUSION: Person confirmed in forbidden zone.
+[2026-03-27 10:41:27] INTRUSION: Person in forbidden zone | AI: yes
+[2026-03-27 10:41:29] Zone cleared.
+[2026-03-27 10:54:21] INTRUSION: Person confirmed in forbidden zone.
+[2026-03-27 10:54:21] INTRUSION: Person in forbidden zone | AI: yes
+[2026-03-27 10:54:21] Zone cleared.
+[2026-03-27 10:54:32] INTRUSION: Person confirmed in forbidden zone.
+[2026-03-27 10:54:38] Zone cleared.
+[2026-03-27 10:55:14] INTRUSION: Person confirmed in forbidden zone.
+[2026-03-27 10:55:14] INTRUSION: Person in forbidden zone | AI: yes
+[2026-03-27 10:55:16] Zone cleared.
+[2026-03-27 11:36:31] INTRUSION detected. AI context: bottle: no | a person with a bottle: no | cap: no
+[2026-03-27 11:36:31] INTRUSION: Person in forbidden zone | AI: bottle: no | a person with a bottle: no | cap: no
+[2026-03-27 11:36:32] Zone cleared.
+[2026-03-27 11:36:44] INTRUSION detected. AI context: bottle: no | a person with a bottle: no | cap: no
+[2026-03-27 11:36:44] Zone cleared.
+[2026-03-27 11:37:00] INTRUSION detected. AI context: bottle: no | a person with a bottle: no | cap: no
+[2026-03-27 11:37:02] Zone cleared.
+[2026-03-27 12:06:46] INTRUSION detected. AI context: bottle: No. | a person with a bottle: ... | cap: ...
+[2026-03-27 12:06:46] INTRUSION: Person in forbidden zone | AI: bottle: No. | a person with a bottle: ... | cap: ...
+[2026-03-27 12:06:50] Zone cleared.
+[2026-03-27 12:07:36] INTRUSION detected. AI context: bottle: No | a person with a bottle: Yes. | cap: No
+[2026-03-27 12:07:36] INTRUSION: Person in forbidden zone | AI: bottle: No | a person with a bottle: Yes. | cap: No
+[2026-03-27 12:07:41] Zone cleared.
