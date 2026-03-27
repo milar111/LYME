@@ -1,275 +1,659 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>LYME — Pose Monitor</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono&display=swap" rel="stylesheet" />
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>LYME — Live Monitor</title>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg:        #06080f;
+      --surface:   #0b0e1a;
+      --border:    #1e2a4a;
+      --accent:    #c8ff00;
+      --danger:    #ff1744;
+      --warn:      #ff9100;
+      --ok:        #00e676;
+      --muted:     #2a3a5a;
+      --text:      #d0e8ff;
+      --dim:       #4a6080;
+      --mono:      'Share Tech Mono', monospace;
+      --sans:      'Barlow Condensed', sans-serif;
+    }
 
-  :root {
-    --bg:       #0e1117;
-    --panel:    #131820;
-    --border:   #1e2a38;
-    --border2:  #181f2a;
-    --text:     #e2e8f0;
-    --muted:    #3d4f63;
-    --subtle:   #2d3a4a;
-    --lime:     #a3e635;
-    --lime-t:   #bef264;
-    --red:      #ef4444;
-    --red-t:    #fca5a5;
-  }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  html, body {
-    height: 100%;
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Inter', system-ui, sans-serif;
-    overflow: hidden;
-  }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
 
-  .shell {
-    display: grid;
-    grid-template-rows: 54px 1fr 42px;
-    grid-template-columns: 1fr 264px;
-    height: 100vh;
-    gap: 1px;
-    background: var(--border);
-  }
+    /* ── scanline overlay ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 3px,
+        rgba(200,255,0,.012) 3px,
+        rgba(200,255,0,.012) 4px
+      );
+      pointer-events: none;
+      z-index: 999;
+    }
 
-  header {
-    grid-column: 1/-1;
-    background: var(--panel);
-    border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 0 22px;
-  }
-  .brand { display: flex; align-items: center; gap: 10px; }
-  .brand-icon {
-    width: 30px; height: 30px; border-radius: 8px;
-    background: #1a2a10; border: 1px solid #3a5a18;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-  }
-  .brand-icon svg { width: 16px; height: 16px; }
-  .brand-name { font-size: 17px; font-weight: 600; letter-spacing: 0.08em; color: var(--lime); }
-  .brand-sub  { font-size: 11px; color: var(--muted); letter-spacing: 0.05em; margin-top: 1px; }
-  #clock { font-size: 12px; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+    /* ── header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 28px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(90deg, #06080f 60%, #0a1020 100%);
+      position: sticky; top: 0; z-index: 100;
+    }
 
-  .video-wrap { background: #07090d; position: relative; overflow: hidden; border-right: 1px solid var(--border); }
-  .video-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .logo {
+      display: flex; align-items: center; gap: 12px;
+    }
 
-  .corner { position: absolute; width: 18px; height: 18px; border-color: var(--lime); border-style: solid; opacity: .7; }
-  .tl { top: 14px; left: 14px;    border-width: 2px 0 0 2px; }
-  .tr { top: 14px; right: 14px;   border-width: 2px 2px 0 0; }
-  .bl { bottom: 14px; left: 14px;  border-width: 0 0 2px 2px; }
-  .br { bottom: 14px; right: 14px; border-width: 0 2px 2px 0; }
+    .logo-icon {
+      width: 34px; height: 34px;
+      border: 2px solid var(--accent);
+      border-radius: 6px;
+      display: grid; place-items: center;
+      position: relative;
+      box-shadow: 0 0 14px rgba(0,229,255,.35);
+      animation: pulse-border 3s ease-in-out infinite;
+    }
 
-  #badge {
-    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
-    padding: 6px 18px; border-radius: 20px;
-    font-size: 12px; font-weight: 500; letter-spacing: 0.07em;
-    white-space: nowrap; transition: all .25s;
-    font-family: 'JetBrains Mono', monospace;
-  }
-  #badge.ok  { background: rgba(163,230,53,.14); color: var(--lime-t); border: 1px solid rgba(163,230,53,.35); }
-  #badge.off { background: rgba(239,68,68,.12);  color: var(--red-t);  border: 1px solid rgba(239,68,68,.28); }
+    @keyframes pulse-border {
+      0%,100% { box-shadow: 0 0 10px rgba(200,255,0,.4); }
+      50%      { box-shadow: 0 0 26px rgba(200,255,0,.9); }
+    }
 
-  .side { background: var(--bg); display: flex; flex-direction: column; gap: 1px; }
-  .widget { background: var(--panel); padding: 15px 18px; flex-shrink: 0; }
-  .wlabel { font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); margin-bottom: 13px; }
+    .logo-icon svg { width: 18px; height: 18px; fill: var(--accent); }
 
-  .orb-row { display: flex; align-items: center; gap: 12px; }
-  #orb {
-    width: 38px; height: 38px; border-radius: 50%;
-    border: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0; transition: border-color .3s;
-  }
-  .orb-inner { width: 13px; height: 13px; border-radius: 50%; transition: background .3s; }
-  #orb.ok  { border-color: rgba(163,230,53,.45); }
-  #orb.ok  .orb-inner { background: var(--lime); }
-  #orb.off { border-color: rgba(239,68,68,.35); }
-  #orb.off .orb-inner { background: var(--red); }
-  #orb-title { font-size: 13px; font-weight: 500; margin: 0; transition: color .3s; }
-  #orb-title.ok  { color: var(--lime-t); }
-  #orb-title.off { color: var(--red-t); }
-  #orb-sub { font-size: 11px; color: var(--muted); margin: 3px 0 0; }
+    .logo-text {
+      font-family: var(--sans);
+      font-weight: 700;
+      font-size: 1.6rem;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+      color: #fff;
+    }
 
-  .metric { display: flex; justify-content: space-between; font-size: 12px; padding: 6px 0; border-bottom: 1px solid var(--border2); }
-  .metric:last-child { border-bottom: none; }
-  .mk { color: var(--muted); }
-  .mv { font-family: 'JetBrains Mono', monospace; color: #7a95b0; }
+    .logo-text span { color: var(--accent); text-shadow: 0 0 18px rgba(200,255,0,.7); }
 
-  .log-wrap { flex: 1; background: var(--panel); padding: 15px 18px; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
-  #log { flex: 1; overflow-y: auto; scrollbar-width: none; }
-  #log::-webkit-scrollbar { display: none; }
-  .le { display: flex; gap: 8px; font-size: 11px; font-family: 'JetBrains Mono', monospace; padding: 3px 0; border-bottom: 1px solid var(--border2); }
-  .le:last-child { border: none; }
-  .lt { color: var(--subtle); flex-shrink: 0; }
-  .le.ok  .lm { color: var(--lime-t); }
-  .le.off .lm { color: var(--red-t); }
-  .le.inf .lm { color: var(--subtle); }
+    .header-right { display: flex; align-items: center; gap: 20px; }
 
-  footer {
-    grid-column: 1/-1;
-    background: var(--panel);
-    border-top: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 0 22px;
-    font-size: 11px; color: var(--subtle);
-    font-family: 'JetBrains Mono', monospace;
-  }
-  .live { display: flex; align-items: center; gap: 6px; }
-  .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--lime); }
-  
-  #quit-btn {
-    margin-top: 15px; width: 100%; background: #2d3a4a; border: 1px solid var(--border); 
-    color: var(--red-t); padding: 8px; border-radius: 4px; font-size: 11px; 
-    cursor: pointer; font-family: 'JetBrains Mono', monospace; transition: background 0.3s;
-  }
-  #quit-btn:hover { background: #3d4f63; }
-</style>
+    .live-pill {
+      display: flex; align-items: center; gap: 7px;
+      font-family: var(--mono);
+      font-size: .72rem;
+      letter-spacing: .08em;
+      color: var(--ok);
+      text-transform: uppercase;
+    }
+
+    .live-dot {
+      width: 7px; height: 7px;
+      background: var(--ok);
+      border-radius: 50%;
+      animation: blink 1.2s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%,100% { opacity: 1; }
+      50%      { opacity: .2; }
+    }
+
+    #clock {
+      font-family: var(--mono);
+      font-size: .82rem;
+      color: var(--dim);
+      letter-spacing: .06em;
+    }
+
+    /* ── layout grid ── */
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      grid-template-rows: auto 1fr;
+      gap: 0;
+      height: calc(100vh - 63px);
+    }
+
+    /* ── video panel ── */
+    .video-panel {
+      grid-row: 1 / 3;
+      position: relative;
+      background: #000;
+      display: flex;
+      align-items: stretch;
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    #stream {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      opacity: 0;
+      transition: opacity .6s;
+    }
+
+    #stream.loaded { opacity: 1; }
+
+    .stream-placeholder {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 14px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: .82rem;
+      letter-spacing: .08em;
+      pointer-events: none;
+    }
+
+    .stream-placeholder svg { width: 48px; height: 48px; opacity: .4; }
+
+    /* alert flash overlay */
+    #alert-flash {
+      position: absolute; inset: 0;
+      border: 0px solid transparent;
+      transition: border-width .05s, border-color .05s;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    #alert-flash.active {
+      border: 6px solid var(--danger);
+      box-shadow: inset 0 0 50px rgba(255,23,68,.35);
+      animation: flash-pulse .4s step-end infinite;
+    }
+
+    @keyframes flash-pulse {
+      0%,100% { opacity: 1; }
+      50%      { opacity: 0; }
+    }
+
+    /* corner brackets */
+    .corner { position: absolute; width: 28px; height: 28px; pointer-events: none; z-index: 5; }
+    .corner.tl { top: 14px; left: 14px; border-top: 2px solid var(--accent); border-left: 2px solid var(--accent); }
+    .corner.tr { top: 14px; right: 14px; border-top: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+    .corner.bl { bottom: 14px; left: 14px; border-bottom: 2px solid var(--accent); border-left: 2px solid var(--accent); }
+    .corner.br { bottom: 14px; right: 14px; border-bottom: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+
+    /* video bottom bar */
+    .video-bar {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      padding: 10px 18px;
+      background: linear-gradient(0deg, rgba(6,8,15,.92) 0%, transparent 100%);
+      display: flex; align-items: center; gap: 18px;
+      font-family: var(--mono);
+      font-size: .72rem;
+      letter-spacing: .06em;
+      color: var(--dim);
+      z-index: 5;
+    }
+
+    #frame-count { color: var(--muted); }
+
+    /* ── right sidebar ── */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      scrollbar-width: none;
+    }
+
+    .sidebar::-webkit-scrollbar { display: none; }
+
+    /* ── stat cards ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stat-card {
+      background: var(--surface);
+      padding: 18px 16px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: background .2s;
+    }
+
+    .stat-label {
+      font-family: var(--mono);
+      font-size: .63rem;
+      letter-spacing: .1em;
+      color: var(--dim);
+      text-transform: uppercase;
+    }
+
+    .stat-value {
+      font-family: var(--sans);
+      font-weight: 700;
+      font-size: 1.55rem;
+      line-height: 1;
+      color: #fff;
+      transition: color .3s;
+    }
+
+    .stat-sub {
+      font-family: var(--mono);
+      font-size: .63rem;
+      color: var(--muted);
+    }
+
+    /* ── zone status block ── */
+    .zone-block {
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .section-title {
+      font-family: var(--sans);
+      font-size: .7rem;
+      font-weight: 600;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--dim);
+      margin-bottom: 2px;
+    }
+
+    .zone-state {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .zone-indicator {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--ok);
+      flex-shrink: 0;
+      transition: background .3s;
+      box-shadow: 0 0 8px var(--ok);
+    }
+
+    .zone-indicator.warn  { background: var(--warn);   box-shadow: 0 0 8px var(--warn); }
+    .zone-indicator.alert { background: var(--danger);  box-shadow: 0 0 12px var(--danger); animation: blink .4s step-end infinite; }
+
+    #zone-label {
+      font-family: var(--mono);
+      font-size: .85rem;
+      letter-spacing: .06em;
+      color: var(--text);
+    }
+
+    /* ── log panel ── */
+    .log-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 16px 20px;
+      gap: 10px;
+      overflow: hidden;
+    }
+
+    #log-list {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .log-entry {
+      font-family: var(--mono);
+      font-size: .68rem;
+      letter-spacing: .04em;
+      color: var(--muted);
+      padding: 6px 10px;
+      border-left: 2px solid var(--border);
+      border-radius: 2px;
+      line-height: 1.5;
+      animation: slide-in .2s ease;
+      transition: border-color .3s;
+    }
+
+    @keyframes slide-in {
+      from { opacity: 0; transform: translateX(-6px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    .log-entry.alert { border-color: var(--danger); color: var(--danger); }
+    .log-entry.warn  { border-color: var(--warn);   color: var(--warn); }
+    .log-entry.ok    { border-color: var(--ok);     color: var(--ok); }
+
+    .log-time {
+      display: block;
+      color: var(--dim);
+      font-size: .6rem;
+      margin-bottom: 2px;
+    }
+
+    /* ── shutdown button ── */
+    .action-bar {
+      padding: 14px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--dim);
+      font-family: var(--mono);
+      font-size: .72rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all .2s;
+    }
+
+    .btn:hover { border-color: var(--muted); color: var(--text); }
+
+    .btn-danger {
+      border-color: rgba(255,45,85,.4);
+      color: var(--danger);
+    }
+
+    .btn-danger:hover {
+      background: rgba(255,23,68,.14);
+      border-color: var(--danger);
+      box-shadow: 0 0 18px rgba(255,23,68,.35);
+    }
+
+    /* ── person badge ── */
+    #person-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: .72rem;
+      letter-spacing: .06em;
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid var(--ok);
+      color: var(--ok);
+      background: rgba(48,209,88,.08);
+      transition: all .3s;
+    }
+
+    #person-badge.detected {
+      border-color: var(--danger);
+      color: var(--danger);
+      background: rgba(255,23,68,.12);
+      box-shadow: 0 0 14px rgba(255,23,68,.35);
+    }
+
+    /* shutdown modal */
+    .modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(6,8,15,.88);
+      z-index: 200;
+      place-items: center;
+    }
+
+    .modal-overlay.open { display: grid; }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--danger);
+      border-radius: 8px;
+      padding: 32px;
+      max-width: 340px;
+      width: 90%;
+      text-align: center;
+      box-shadow: 0 0 50px rgba(255,23,68,.25);
+    }
+
+    .modal h2 {
+      font-family: var(--sans);
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--danger);
+      margin-bottom: 10px;
+    }
+
+    .modal p {
+      font-family: var(--mono);
+      font-size: .75rem;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+
+    .modal-actions { display: flex; gap: 12px; }
+
+    .modal-actions .btn { flex: 1; }
+  </style>
 </head>
 <body>
-<div class="shell">
 
-  <header>
-    <div class="brand">
-      <div class="brand-icon">
-        <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="8" cy="8" r="3" fill="#a3e635"/>
-          <circle cx="8" cy="2" r="1.2" fill="#a3e635" opacity=".5"/>
-          <circle cx="8" cy="14" r="1.2" fill="#a3e635" opacity=".5"/>
-          <circle cx="2" cy="8" r="1.2" fill="#a3e635" opacity=".5"/>
-          <circle cx="14" cy="8" r="1.2" fill="#a3e635" opacity=".5"/>
-        </svg>
-      </div>
-      <div>
-        <div class="brand-name">LYME</div>
-        <div class="brand-sub">pose detection monitor</div>
-      </div>
+<header>
+  <div class="logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
+      </svg>
     </div>
-    <span id="clock">—</span>
-  </header>
+    <div class="logo-text">LY<span>ME</span></div>
+  </div>
 
-  <div class="video-wrap">
-    <img id="feed" src="/video_feed" alt="Camera feed" />
+  <div class="header-right">
+    <div class="live-pill">
+      <div class="live-dot"></div>
+      Live
+    </div>
+    <div id="clock">--:--:--</div>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- video -->
+  <div class="video-panel">
+    <div class="stream-placeholder" id="placeholder">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+        <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
+      </svg>
+      Waiting for stream…
+    </div>
+
+    <img id="stream" src="/video_feed" alt="Camera feed"
+         onload="this.classList.add('loaded'); document.getElementById('placeholder').style.display='none'"/>
+
+    <div id="alert-flash"></div>
+
     <div class="corner tl"></div>
     <div class="corner tr"></div>
     <div class="corner bl"></div>
     <div class="corner br"></div>
-    <div id="badge" class="off">no one in sight</div>
+
+    <div class="video-bar">
+      <span id="person-badge">
+        <span id="badge-dot" style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;"></span>
+        <span id="badge-text">No person</span>
+      </span>
+      <span style="margin-left:auto;">FRAMES: <span id="frame-count">—</span></span>
+    </div>
   </div>
 
-  <div class="side">
+  <!-- sidebar -->
+  <div class="sidebar">
 
-    <div class="widget">
-      <div class="wlabel">Status</div>
-      <div class="orb-row">
-        <div id="orb" class="off"><div class="orb-inner"></div></div>
-        <div>
-          <p id="orb-title" class="off">Scanning…</p>
-          <p id="orb-sub">—</p>
-        </div>
+    <!-- stat cards -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Status</div>
+        <div class="stat-value" id="stat-status" style="font-size:1.1rem;margin-top:2px;">—</div>
+        <div class="stat-sub">Zone state</div>
       </div>
-      <button id="quit-btn" onclick="quitApp()">SHUTDOWN SYSTEM</button>
-    </div>
-
-    <div class="widget">
-      <div class="wlabel">Metrics</div>
-      <div class="metric"><span class="mk">Frames</span><span class="mv" id="m-frames">—</span></div>
-      <div class="metric"><span class="mk">Last seen</span><span class="mv" id="m-last">—</span></div>
-      <div class="metric"><span class="mk">Camera</span><span class="mv">index 0</span></div>
-      <div class="metric"><span class="mk">Poll</span><span class="mv">1 000 ms</span></div>
-    </div>
-
-    <div class="log-wrap">
-      <div class="wlabel">Event log</div>
-      <div id="log">
-        <div class="le inf"><span class="lt">—</span><span class="lm">started</span></div>
+      <div class="stat-card">
+        <div class="stat-label">Last Seen</div>
+        <div class="stat-value" id="stat-last">—</div>
+        <div class="stat-sub">seconds ago</div>
       </div>
     </div>
 
+    <!-- zone status -->
+    <div class="zone-block">
+      <div class="section-title">Zone Monitor</div>
+      <div class="zone-state">
+        <div class="zone-indicator" id="zone-dot"></div>
+        <span id="zone-label">CLEAR</span>
+      </div>
+    </div>
+
+    <!-- event log -->
+    <div class="log-panel">
+      <div class="section-title">Event Log</div>
+      <div id="log-list"></div>
+    </div>
+
+    <!-- actions -->
+    <div class="action-bar">
+      <button class="btn" onclick="clearLog()">Clear Log</button>
+      <button class="btn btn-danger" onclick="document.getElementById('modal').classList.add('open')">Shutdown</button>
+    </div>
+
   </div>
-
-  <footer>
-    <span class="live"><div class="live-dot"></div> live stream</span>
-    <span id="fstatus">initialising</span>
-    <span>mediapipe · opencv · flask</span>
-  </footer>
-
 </div>
+
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h2>Confirm Shutdown</h2>
+    <p>This will terminate the camera feed and stop all monitoring. Are you sure?</p>
+    <div class="modal-actions">
+      <button class="btn" onclick="document.getElementById('modal').classList.remove('open')">Cancel</button>
+      <button class="btn btn-danger" onclick="shutdown()">Shut Down</button>
+    </div>
+  </div>
+</div>
+
 <script>
-  function tick() {
+  function tickClock() {
+    const now = new Date();
     document.getElementById('clock').textContent =
-      new Date().toLocaleTimeString('en-GB', { hour12: false });
+      now.toTimeString().slice(0, 8);
   }
-  setInterval(tick, 1000); tick();
+  tickClock();
+  setInterval(tickClock, 1000);
 
-  let last = null;
+  const MAX_LOG = 60;
+  const logList = document.getElementById('log-list');
 
-  function addLog(msg, cls) {
-    const log = document.getElementById('log');
-    const t = new Date().toLocaleTimeString('en-GB', { hour12: false });
-    const row = document.createElement('div');
-    row.className = 'le ' + cls;
-    row.innerHTML = `<span class="lt">${t}</span><span class="lm">${msg}</span>`;
-    log.prepend(row);
-    while (log.children.length > 50) log.lastChild.remove();
+  function addLog(message, type = 'info') {
+    const entry = document.createElement('div');
+    entry.className = `log-entry${type === 'alert' ? ' alert' : type === 'warn' ? ' warn' : type === 'ok' ? ' ok' : ''}`;
+    const t = new Date().toTimeString().slice(0, 8);
+    entry.innerHTML = `<span class="log-time">${t}</span>${message}`;
+    logList.prepend(entry);
+    while (logList.children.length > MAX_LOG) logList.removeChild(logList.lastChild);
   }
 
-  async function poll() {
+  function clearLog() {
+    logList.innerHTML = '';
+    addLog('Log cleared.', 'info');
+  }
+
+  let prevPerson = null;
+  let prevAlert  = false;
+
+  async function pollStatus() {
     try {
-      const d = await fetch('/status').then(r => r.json());
-      const det = d.person_in_sight;
-      const cls = det ? 'ok' : 'off';
+      const res  = await fetch('/status');
+      const data = await res.json();
 
-      const badge = document.getElementById('badge');
-      badge.className = cls;
-      badge.textContent = det ? 'person detected' : 'no one in sight';
+      const { person_in_sight, last_seen_ago, frame_count } = data;
 
-      document.getElementById('orb').className = cls;
-      const title = document.getElementById('orb-title');
-      title.className = cls;
-      title.textContent = det ? 'Person detected' : 'No one in sight';
+      document.getElementById('frame-count').textContent =
+        frame_count !== undefined ? frame_count.toLocaleString() : '—';
 
-      document.getElementById('orb-sub').textContent =
-        d.last_seen_ago != null ? 'last seen ' + d.last_seen_ago + 's ago' : 'never detected';
-      document.getElementById('m-frames').textContent = d.frame_count.toLocaleString();
-      document.getElementById('m-last').textContent =
-        d.last_seen_ago != null ? d.last_seen_ago + 's ago' : '—';
-      document.getElementById('fstatus').textContent =
-        det ? 'presence confirmed' : 'area clear';
+      document.getElementById('stat-last').textContent =
+        last_seen_ago !== null ? last_seen_ago : '—';
 
-      if (det !== last) {
-        if (last !== null)
-          addLog(det ? 'human entered frame' : 'human left frame', cls);
-        last = det;
+      const badge = document.getElementById('person-badge');
+      const badgeText = document.getElementById('badge-text');
+      if (person_in_sight) {
+        badge.classList.add('detected');
+        badgeText.textContent = 'Person detected';
+      } else {
+        badge.classList.remove('detected');
+        badgeText.textContent = 'No person';
       }
-    } catch (_) {
-      document.getElementById('fstatus').textContent = 'connection error';
+
+      const dot   = document.getElementById('zone-dot');
+      const label = document.getElementById('zone-label');
+      const stat  = document.getElementById('stat-status');
+      const flash = document.getElementById('alert-flash');
+
+      if (person_in_sight) {
+        dot.className   = 'zone-indicator alert';
+        label.textContent = 'INTRUDING';
+        stat.textContent  = 'INTRUDING';
+        stat.style.color  = 'var(--danger)';
+        flash.classList.add('active');
+      } else {
+        dot.className   = 'zone-indicator';
+        label.textContent = 'CLEAR';
+        stat.textContent  = 'CLEAR';
+        stat.style.color  = 'var(--ok)';
+        flash.classList.remove('active');
+      }
+
+      if (prevPerson !== null) {
+        if (person_in_sight && !prevPerson)
+          addLog(' Person entered zone.', 'alert');
+        else if (person_in_sight && prevPerson)
+          addLog(' Zone cleared.', 'ok');
+      } else {
+        addLog('Monitoring started.', 'ok');
+      }
+      prevPerson = person_in_sight;
+
+    } catch (e) {
+      addLog('Connection lost — retrying…', 'warn');
     }
   }
 
-  setInterval(poll, 1000);
-  poll();
+  pollStatus();
+  setInterval(pollStatus, 4000);
 
-  async function quitApp() {
-    if (!confirm("Are you sure you want to shut down the security system?")) return;
+  async function shutdown() {
+    document.getElementById('modal').classList.remove('open');
+    addLog('Shutdown command sent.', 'warn');
     try {
-        await fetch('/shutdown', { method: 'POST' });
-        document.body.innerHTML = `
-            <div style="height:100vh; display:flex; align-items:center; justify-content:center; background:var(--bg); color:var(--red); font-family:'JetBrains Mono'; flex-direction:column; text-align:center;">
-                <h1 style="letter-spacing:4px;">SYSTEM OFFLINE</h1>
-                <p style="color:var(--muted); margin-top:10px;">The monitoring engine has stopped. You can now close this tab.</p>
-            </div>
-        `;
-    } catch (e) {
-        alert("Shutdown command failed.");
+      await fetch('/shutdown', { method: 'POST' });
+      addLog('Server acknowledged shutdown.', 'ok');
+    } catch {
+      addLog('No response — server may already be offline.', 'warn');
     }
   }
 </script>
