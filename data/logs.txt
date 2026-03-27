@@ -164,3 +164,9 @@
 [2026-03-27 13:45:06] INTRUSION: Person in forbidden zone | AI: cap: ... | preson: ... | person: ...
 [2026-03-27 13:45:13] Zone cleared.
 [2026-03-27 13:53:05] OBJECT DETECTED [person] (80%): CONFIDENCE: 80% | Yes | There is a person in the image.
+[2026-03-27 14:02:36] OBJECT DETECTED [person] (85%): CONFIDENCE: 85% | Yes | The image shows a person wearing a striped jacket.
+[2026-03-27 14:03:49] OBJECT DETECTED [person] (80%): CONFIDENCE: 80% | Yes | There is a person in the image.
+[2026-03-27 14:04:23] OBJECT DETECTED [cap] (50%): CONFIDENCE: 50% | Yes | There is a cap in the image.
+[2026-03-27 14:09:42] INTRUSION detected. AI context: cap: ... | person: ...
+[2026-03-27 14:09:42] INTRUSION: Person in forbidden zone | AI: cap: ... | person: ...
+[2026-03-27 14:09:49] Zone cleared.

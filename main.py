@@ -4,7 +4,7 @@ import time
 import threading
 import cv2
 import numpy as np
-from flask import Flask, Response, jsonify, render_template
+from flask import Flask, Response, jsonify, render_template, request
 from src import actions, config
 from src.tracker import VisionTracker
 from src.zone_manager import init_zone, draw_zones, body_centre_in_zone, get_zone_pts
@@ -17,8 +17,6 @@ from src.alerts import fire_alert, log_event
 
 warnings.filterwarnings("ignore")
 logging.getLogger("transformers").setLevel(logging.ERROR)
-
-# ── WEB UI STATE & SERVER ─────────────────────────────────────────────────────
 
 class WebUIState:
     def __init__(self):
@@ -34,12 +32,12 @@ class WebUIState:
             if person_detected:
                 self.last_seen = time.time()
             self.frame_count += 1
-            # Encode frame for web delivery
             ret, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
             if ret:
                 self.latest_frame = jpeg.tobytes()
 
 ui_state = WebUIState()
+_running = True
 app = Flask(__name__, template_folder="demo_app/templates")
 
 @app.route("/")
@@ -68,18 +66,20 @@ def status():
             frame_count=ui_state.frame_count
         )
 
+@app.route("/shutdown", methods=['POST'])
+def shutdown():
+    global _running
+    _running = False
+    return jsonify(status="shutting_down")
+
 def run_flask():
     app.run(host="0.0.0.0", port=4000, debug=False, use_reloader=False)
-
-# ── 1. Models ─────────────────────────────────────────────────────────────────
 
 print("Loading Qwen2.5-VL model...")
 actions.init_model()
 
 print("Initialising MediaPipe tracker...")
 tracker = VisionTracker()
-
-# ── 2. Camera + zone ──────────────────────────────────────────────────────────
 
 cap = cv2.VideoCapture(config.CAMERA_SOURCE)
 if not cap.isOpened():
@@ -93,21 +93,15 @@ first_frame = cv2.flip(first_frame, 1)
 zone_active = init_zone(first_frame)
 print(f"[main] Zone: {'active' if zone_active else 'none — monitor-only mode'}")
 
-# ── 3. AI context ─────────────────────────────────────────────────────────────
-
 init_context()
 _questions   = build_blip_questions()
 _items       = get_items()
 _blip_idx    = 0
 
-# ── Start Web Server ─────────────────────────────────────────────────────────
-
 threading.Thread(target=run_flask, daemon=True).start()
 print("\n[main] Web UI active at http://localhost:4000")
 print(f"[main] Monitoring for: {get_summary()}")
-print("[main] Running — press Q to quit.\n")
-
-# ── Runtime state ─────────────────────────────────────────────────────────────
+print("[main] Running — use the Web UI to monitor or shut down.\n")
 
 guard = IntrusionGuard()
 prev_guard_state: GuardState = GuardState.CLEAR
@@ -126,8 +120,6 @@ _CLEARED_PUSH_COOLDOWN = 60.0
 
 _flash_until: float = 0.0
 _FLASH_DURATION = 0.4
-
-# ── Qwen background worker ────────────────────────────────────────────────────
 
 def _run_qwen_async(frame_copy, question: str, answer_idx: int,
                     item_name: str, crop_pts=None):
@@ -159,8 +151,6 @@ def _run_qwen_async(frame_copy, question: str, answer_idx: int,
     finally:
         _ai_busy = False
 
-# ── Text helper ───────────────────────────────────────────────────────────────
-
 def _put_label(frame, text: str, x: int, y: int,
                colour=(0, 255, 0), scale: float = 0.78, thickness: int = 2):
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -173,8 +163,6 @@ def _put_label(frame, text: str, x: int, y: int,
                   (0, 0, 0), -1)
     cv2.addWeighted(overlay, 0.55, frame, 0.45, 0, frame)
     cv2.putText(frame, text, (x, y), font, scale, colour, thickness)
-
-# ── HUD ───────────────────────────────────────────────────────────────────────
 
 def _draw_hud(frame, person: bool, gesture: str, objects: list,
               guard_state: GuardState, dwell_progress: float,
@@ -215,7 +203,10 @@ def _draw_hud(frame, person: bool, gesture: str, objects: list,
         else:
             display = ans[:40]
         
-        _put_label(frame, f"AI [{short_item}]: {display[:55]}", x0, y0 + LINE_H * (3 + i), colour, SCALE)
+        if len(display) > 40:
+            display = display[:37] + "..."
+        
+        _put_label(frame, f"AI [{short_item}]: {display}", x0, y0 + LINE_H * (3 + i), colour, SCALE)
 
     status_y = y0 + LINE_H * (3 + len(_items))
     _put_label(frame, f"Zone: {guard_state.name}", x0, status_y, (0, 0, 255) if alert_active else (180, 180, 180), SCALE)
@@ -225,10 +216,8 @@ def _draw_hud(frame, person: bool, gesture: str, objects: list,
         cv2.rectangle(frame, (10, h - 22), (w - 10, h - 8), (40, 40, 40), -1)
         cv2.rectangle(frame, (10, h - 22), (10 + bar_w, h - 8), (0, 165, 255), -1)
 
-# ── Main loop ─────────────────────────────────────────────────────────────────
-
 try:
-    while cap.isOpened():
+    while _running and cap.isOpened():
         ok, frame = cap.read()
         if not ok: break
         frame = cv2.flip(frame, 1)
@@ -271,12 +260,7 @@ try:
             ).start()
 
         _draw_hud(frame, person, gesture, objects, guard_state, dwell_progress, alert_active)
-
-        # Update the Web UI state with the annotated frame and detection status
         ui_state.update(frame, person)
-
-        #cv2.imshow("LYME Security Camera", frame)
-        #if cv2.waitKey(1) & 0xFF == ord('q'): break
 
 finally:
     cap.release()

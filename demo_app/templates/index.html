@@ -40,7 +40,6 @@
     background: var(--border);
   }
 
-  /* Header */
   header {
     grid-column: 1/-1;
     background: var(--panel);
@@ -60,9 +59,8 @@
   .brand-sub  { font-size: 11px; color: var(--muted); letter-spacing: 0.05em; margin-top: 1px; }
   #clock { font-size: 12px; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
 
-  /* Video */
   .video-wrap { background: #07090d; position: relative; overflow: hidden; border-right: 1px solid var(--border); }
-  .video-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; object_postion: center;}
+  .video-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; }
 
   .corner { position: absolute; width: 18px; height: 18px; border-color: var(--lime); border-style: solid; opacity: .7; }
   .tl { top: 14px; left: 14px;    border-width: 2px 0 0 2px; }
@@ -80,12 +78,10 @@
   #badge.ok  { background: rgba(163,230,53,.14); color: var(--lime-t); border: 1px solid rgba(163,230,53,.35); }
   #badge.off { background: rgba(239,68,68,.12);  color: var(--red-t);  border: 1px solid rgba(239,68,68,.28); }
 
-  /* Side */
   .side { background: var(--bg); display: flex; flex-direction: column; gap: 1px; }
   .widget { background: var(--panel); padding: 15px 18px; flex-shrink: 0; }
   .wlabel { font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); margin-bottom: 13px; }
 
-  /* Orb */
   .orb-row { display: flex; align-items: center; gap: 12px; }
   #orb {
     width: 38px; height: 38px; border-radius: 50%;
@@ -103,13 +99,11 @@
   #orb-title.off { color: var(--red-t); }
   #orb-sub { font-size: 11px; color: var(--muted); margin: 3px 0 0; }
 
-  /* Metrics */
   .metric { display: flex; justify-content: space-between; font-size: 12px; padding: 6px 0; border-bottom: 1px solid var(--border2); }
   .metric:last-child { border-bottom: none; }
   .mk { color: var(--muted); }
   .mv { font-family: 'JetBrains Mono', monospace; color: #7a95b0; }
 
-  /* Log */
   .log-wrap { flex: 1; background: var(--panel); padding: 15px 18px; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
   #log { flex: 1; overflow-y: auto; scrollbar-width: none; }
   #log::-webkit-scrollbar { display: none; }
@@ -120,7 +114,6 @@
   .le.off .lm { color: var(--red-t); }
   .le.inf .lm { color: var(--subtle); }
 
-  /* Footer */
   footer {
     grid-column: 1/-1;
     background: var(--panel);
@@ -132,6 +125,13 @@
   }
   .live { display: flex; align-items: center; gap: 6px; }
   .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--lime); }
+  
+  #quit-btn {
+    margin-top: 15px; width: 100%; background: #2d3a4a; border: 1px solid var(--border); 
+    color: var(--red-t); padding: 8px; border-radius: 4px; font-size: 11px; 
+    cursor: pointer; font-family: 'JetBrains Mono', monospace; transition: background 0.3s;
+  }
+  #quit-btn:hover { background: #3d4f63; }
 </style>
 </head>
 <body>
@@ -176,6 +176,7 @@
           <p id="orb-sub">—</p>
         </div>
       </div>
+      <button id="quit-btn" onclick="quitApp()">SHUTDOWN SYSTEM</button>
     </div>
 
     <div class="widget">
@@ -256,6 +257,21 @@
 
   setInterval(poll, 1000);
   poll();
+
+  async function quitApp() {
+    if (!confirm("Are you sure you want to shut down the security system?")) return;
+    try {
+        await fetch('/shutdown', { method: 'POST' });
+        document.body.innerHTML = `
+            <div style="height:100vh; display:flex; align-items:center; justify-content:center; background:var(--bg); color:var(--red); font-family:'JetBrains Mono'; flex-direction:column; text-align:center;">
+                <h1 style="letter-spacing:4px;">SYSTEM OFFLINE</h1>
+                <p style="color:var(--muted); margin-top:10px;">The monitoring engine has stopped. You can now close this tab.</p>
+            </div>
+        `;
+    } catch (e) {
+        alert("Shutdown command failed.");
+    }
+  }
 </script>
 </body>
 </html>
