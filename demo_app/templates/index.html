@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pose Monitor</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: system-ui, sans-serif;
+    height: 100vh;
+    display: grid;
+    grid-template-rows: 48px 1fr;
+    grid-template-columns: 1fr 240px;
+    gap: 1px;
+    background: #ddd;
+  }
+
+  header {
+    grid-column: 1 / -1;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    font-size: 15px;
+    font-weight: 500;
+  }
+  #clock { font-size: 12px; color: #888; font-family: monospace; }
+
+  .video-wrap { background: #000; position: relative; overflow: hidden; }
+  .video-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  #badge {
+    position: absolute;
+    bottom: 16px; left: 50%; transform: translateX(-50%);
+    padding: 6px 20px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: monospace;
+    white-space: nowrap;
+    transition: background .2s, color .2s;
+  }
+  #badge.detected { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+  #badge.empty    { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+
+  .side { background: #f0f0f0; display: flex; flex-direction: column; gap: 1px; }
+  .widget { background: #fff; padding: 14px 16px; }
+  .widget-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #999; margin-bottom: 10px; }
+
+  .orb-row { display: flex; align-items: center; gap: 10px; }
+  #orb { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; transition: background .2s; }
+  #orb.detected { background: #22c55e; }
+  #orb.empty    { background: #ef4444; }
+  #orb-text { font-size: 13px; }
+  #orb-text.detected { color: #166534; }
+  #orb-text.empty    { color: #991b1b; }
+
+  .metric { display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; border-bottom: 1px solid #f0f0f0; }
+  .metric:last-child { border-bottom: none; }
+  .metric-k { color: #999; }
+  .metric-v { font-family: monospace; }
+
+  .log-wrap { flex: 1; background: #fff; padding: 14px 16px; overflow: hidden; display: flex; flex-direction: column; }
+  #log { flex: 1; overflow-y: auto; }
+  .log-entry { font-size: 11px; font-family: monospace; padding: 2px 0; }
+  .log-entry.detected { color: #166534; }
+  .log-entry.empty    { color: #991b1b; }
+  .log-entry.info     { color: #aaa; }
+</style>
+</head>
+<body>
+
+<header>
+  Pose monitor
+  <span id="clock">—</span>
+</header>
+
+<div class="video-wrap">
+  <img id="feed" src="/video_feed" alt="Camera feed" />
+  <div id="badge" class="empty">no one in sight</div>
+</div>
+
+<div class="side">
+  <div class="widget">
+    <div class="widget-label">Status</div>
+    <div class="orb-row">
+      <div id="orb" class="empty"></div>
+      <span id="orb-text" class="empty">scanning…</span>
+    </div>
+  </div>
+
+  <div class="widget">
+    <div class="widget-label">Metrics</div>
+    <div class="metric"><span class="metric-k">Frames</span><span class="metric-v" id="m-frames">—</span></div>
+    <div class="metric"><span class="metric-k">Last seen</span><span class="metric-v" id="m-last">—</span></div>
+    <div class="metric"><span class="metric-k">Camera</span><span class="metric-v">index 0</span></div>
+  </div>
+
+  <div class="log-wrap">
+    <div class="widget-label">Log</div>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script>
+  function tick() {
+    document.getElementById('clock').textContent =
+      new Date().toLocaleTimeString('en-GB', { hour12: false });
+  }
+  setInterval(tick, 1000); tick();
+
+  let last = null;
+
+  function addLog(msg, cls) {
+    const log = document.getElementById('log');
+    const time = new Date().toLocaleTimeString('en-GB', { hour12: false });
+    const element = document.createElement('div');
+    element.className = 'log-entry ' + cls;
+    element.textContent = time + ' — ' + msg;
+    log.prepend(element);
+    while (log.children.length > 50) log.lastChild.remove();
+  }
+
+  async function poll() {
+    try {
+      const d = await fetch('/status').then(r => r.json());
+      const det = d.person_in_sight;
+
+      const badge = document.getElementById('badge');
+      badge.className = 'badge ' + (det ? 'detected' : 'empty');
+      badge.textContent = det ? 'person detected' : 'no one in sight';
+
+      document.getElementById('orb').className = det ? 'detected' : 'empty';
+      const ot = document.getElementById('orb-text');
+      ot.className = det ? 'detected' : 'empty';
+      ot.textContent = det ? 'Person detected' : 'No one in sight';
+
+      document.getElementById('m-frames').textContent = d.frame_count.toLocaleString();
+      document.getElementById('m-last').textContent = d.last_seen_ago != null ? d.last_seen_ago + 's ago' : '—';
+
+      if (det !== last) {
+        if (last !== null)
+          addLog(det ? 'Human entered frame' : 'Human left frame', det ? 'detected' : 'empty');
+        last = det;
+      }
+    } catch (_) {}
+  }
+
+  addLog('started', 'info');
+  setInterval(poll, 1000);
+  poll();
+</script>
+</body>
+</html>
